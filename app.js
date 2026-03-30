@@ -23,7 +23,7 @@ const ui = {
   lastLog: document.getElementById("lastLog"),
 };
 
-const projectTypes = ["newProject", "existingProject", "migration"];
+const projectTypes = ["newProject", "existingProject"];
 const API_ENDPOINTS = buildApiEndpoints();
 
 const state = {
