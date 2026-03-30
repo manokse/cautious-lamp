@@ -40,18 +40,18 @@
             Mode Eksekusi
             <select id="executionMode">
               <option value="sequential">sequential</option>
-              <option value="async_pool">async pool (thread/worker)</option>
+              <option value="async_pool" selected>async pool (thread/worker)</option>
             </select>
           </label>
 
           <label>
             Worker / Thread Count
-            <input id="workerCount" type="number" min="1" max="12" value="3" />
+            <input id="workerCount" type="number" min="1" max="12" value="4" />
           </label>
 
           <label>
             OTP Timeout / akun (detik)
-            <input id="otpWaitSeconds" type="number" min="15" max="180" value="60" />
+            <input id="otpWaitSeconds" type="number" min="15" max="180" value="45" />
           </label>
 
           <label>
@@ -97,6 +97,11 @@
               placeholder="1.2.3.4:8080\n1.2.3.4:8080:user:pass\nuser:pass@proxy.example:9000\nhttps://proxy.example/fetch?target={url}"
               disabled
             ></textarea>
+          </label>
+
+          <label>
+            Max Percobaan Proxy / akun
+            <input id="proxyMaxAttempts" type="number" min="1" max="12" value="2" disabled />
           </label>
 
           <details class="span-2 proxy-help">

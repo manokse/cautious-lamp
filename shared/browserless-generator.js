@@ -59,6 +59,18 @@ function randomChoice(values) {
   return values[randomInt(0, values.length - 1)];
 }
 
+function shuffleArray(values) {
+  const output = [...values];
+  for (let i = output.length - 1; i > 0; i -= 1) {
+    const j = randomInt(0, i);
+    const tmp = output[i];
+    output[i] = output[j];
+    output[j] = tmp;
+  }
+
+  return output;
+}
+
 function randomString(size) {
   const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
   let output = "";
@@ -84,6 +96,42 @@ function normalizeTokenInput(token) {
   }
 
   return normalized.slice(0, 64);
+}
+
+async function runFetchWithTimeout(fetchFn, input, init, timeoutMs) {
+  const sourceSignal = init?.signal;
+  const controller = new AbortController();
+
+  const onAbort = () => controller.abort();
+  if (sourceSignal) {
+    if (sourceSignal.aborted) {
+      controller.abort();
+    } else {
+      sourceSignal.addEventListener("abort", onAbort, { once: true });
+    }
+  }
+
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetchFn(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    const sourceAborted = Boolean(sourceSignal?.aborted);
+    const timeoutAborted = controller.signal.aborted && !sourceAborted;
+    if (timeoutAborted) {
+      throw new Error(`request timeout after ${timeoutMs}ms`);
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+    if (sourceSignal) {
+      sourceSignal.removeEventListener("abort", onAbort);
+    }
+  }
 }
 
 function sleep(ms) {
@@ -545,15 +593,25 @@ function buildProxyTarget(proxyUrl, targetUrl) {
 }
 
 async function requestWithProxy(targetUrl, init, options) {
+  const timeoutMs = Math.max(
+    6000,
+    Math.min(45000, Number.parseInt(String(options?.requestTimeoutMs || 15000), 10) || 15000),
+  );
+
   const useProxy = options?.proxyEnabled && options?.proxyUrl;
   if (!useProxy) {
-    return fetch(targetUrl, init);
+    return runFetchWithTimeout(fetch, targetUrl, init, timeoutMs);
   }
 
   const normalizedProxyUrl = normalizeProxyEndpointInput(String(options.proxyUrl));
 
   if (isLikelyForwardProxyUrl(normalizedProxyUrl)) {
-    return fetchWithNodeForwardProxy(targetUrl, init, normalizedProxyUrl);
+    return runFetchWithTimeout(
+      (input, nextInit) => fetchWithNodeForwardProxy(input, nextInit, normalizedProxyUrl),
+      targetUrl,
+      init,
+      timeoutMs,
+    );
   }
 
   const proxyTarget = buildProxyTarget(normalizedProxyUrl, targetUrl);
@@ -565,10 +623,10 @@ async function requestWithProxy(targetUrl, init, options) {
     headers.set("proxy-authorization", proxyAuth);
   }
 
-  return fetch(proxyTarget, {
+  return runFetchWithTimeout(fetch, proxyTarget, {
     ...init,
     headers,
-  });
+  }, timeoutMs);
 }
 
 async function loadDomains(requestUrl, proxyOptions) {
@@ -665,28 +723,51 @@ async function pollOtpFromEmailfake(mailbox, cookieHeader, maxWaitSeconds, proxy
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     const discovered = [];
 
+    const channelTasks = [];
     for (let channelId = 1; channelId <= 8; channelId += 1) {
-      try {
-        const inboxHtml = await fetchEmailfakeInboxHtml(mailbox, cookieHeader, channelId, proxyOptions);
-        const inboxMeta = extractInboxMeta(inboxHtml);
-        const otpCandidates = extractOtpCandidatesFromInboxHtml(inboxHtml);
+      channelTasks.push((async () => {
+        try {
+          const inboxHtml = await fetchEmailfakeInboxHtml(mailbox, cookieHeader, channelId, proxyOptions);
+          const inboxMeta = extractInboxMeta(inboxHtml);
+          const otpCandidates = extractOtpCandidatesFromInboxHtml(inboxHtml);
 
-        operationLog.push(
-          `[${nowIso()}] poll ${attempt}/${attempts} channel=${channelId} candidates=${otpCandidates.length}`,
-        );
-
-        for (const otpCandidate of otpCandidates) {
-          discovered.push({
-            code: otpCandidate.code,
-            reason: otpCandidate.reason,
+          return {
             channelId,
             inboxMeta,
-          });
+            otpCandidates,
+            error: "",
+          };
+        } catch (error) {
+          return {
+            channelId,
+            inboxMeta: null,
+            otpCandidates: [],
+            error: error instanceof Error ? error.message : "unknown",
+          };
         }
-      } catch (error) {
+      })());
+    }
+
+    const channelResults = await Promise.all(channelTasks);
+    for (const result of channelResults) {
+      if (result.error) {
         operationLog.push(
-          `[${nowIso()}] poll ${attempt}/${attempts} channel=${channelId} failed: ${error instanceof Error ? error.message : "unknown"}`,
+          `[${nowIso()}] poll ${attempt}/${attempts} channel=${result.channelId} failed: ${result.error}`,
         );
+        continue;
+      }
+
+      operationLog.push(
+        `[${nowIso()}] poll ${attempt}/${attempts} channel=${result.channelId} candidates=${result.otpCandidates.length}`,
+      );
+
+      for (const otpCandidate of result.otpCandidates) {
+        discovered.push({
+          code: otpCandidate.code,
+          reason: otpCandidate.reason,
+          channelId: result.channelId,
+          inboxMeta: result.inboxMeta,
+        });
       }
     }
 
@@ -1288,7 +1369,7 @@ async function generateBrowserlessAccountSingle(options = {}, proxyOptions, prox
 export async function generateBrowserlessAccount(options = {}) {
   const allCandidates = buildProxyCandidates(options);
   const skippedForwardProxyLabels = [];
-  const proxyCandidates = [];
+  const compatibleCandidates = [];
 
   for (const candidate of allCandidates) {
     const isForwardProxy = Boolean(
@@ -1302,11 +1383,33 @@ export async function generateBrowserlessAccount(options = {}) {
       continue;
     }
 
-    proxyCandidates.push(candidate);
+    compatibleCandidates.push(candidate);
   }
 
-  if (!proxyCandidates.length) {
-    proxyCandidates.push({ proxyEnabled: false, proxyUrl: "", label: "direct-fallback" });
+  const proxyCandidates = compatibleCandidates.filter((item) => item.proxyEnabled);
+  const directCandidates = compatibleCandidates.filter((item) => !item.proxyEnabled);
+
+  const hasExplicitProxyMaxAttempts = options.proxyMaxAttempts !== undefined && options.proxyMaxAttempts !== null;
+  const parsedProxyMaxAttempts = Number.parseInt(String(options.proxyMaxAttempts || 0), 10);
+  const proxyMaxAttempts = hasExplicitProxyMaxAttempts && Number.isFinite(parsedProxyMaxAttempts)
+    ? Math.max(1, Math.min(12, parsedProxyMaxAttempts))
+    : proxyCandidates.length
+      ? Math.min(2, proxyCandidates.length)
+      : 0;
+
+  let selectedProxyCandidates = proxyCandidates;
+  if (proxyCandidates.length > 1) {
+    selectedProxyCandidates = shuffleArray(proxyCandidates);
+  }
+
+  if (proxyMaxAttempts > 0 && selectedProxyCandidates.length > proxyMaxAttempts) {
+    selectedProxyCandidates = selectedProxyCandidates.slice(0, proxyMaxAttempts);
+  }
+
+  const executionCandidates = [...selectedProxyCandidates, ...directCandidates];
+
+  if (!executionCandidates.length) {
+    executionCandidates.push({ proxyEnabled: false, proxyUrl: "", label: "direct-fallback" });
   }
 
   const errors = [];
@@ -1317,13 +1420,19 @@ export async function generateBrowserlessAccount(options = {}) {
     );
   }
 
-  for (let index = 0; index < proxyCandidates.length; index += 1) {
-    const candidate = proxyCandidates[index];
+  if (proxyCandidates.length && proxyMaxAttempts > 0 && proxyCandidates.length > proxyMaxAttempts) {
+    errors.push(
+      `[proxy-strategy] proxy attempts limited to ${proxyMaxAttempts} from ${proxyCandidates.length} candidate(s)`,
+    );
+  }
+
+  for (let index = 0; index < executionCandidates.length; index += 1) {
+    const candidate = executionCandidates[index];
 
     try {
       return await generateBrowserlessAccountSingle(options, candidate, {
         attempt: index + 1,
-        total: proxyCandidates.length,
+        total: executionCandidates.length,
         label: candidate.label,
       });
     } catch (error) {

@@ -10,6 +10,7 @@ Fitur utama:
 - Tombol stop untuk membatalkan proses yang sedang berjalan
 - Opsi proxy on/off
 - Proxy pool (multi proxy) dengan auto-retry antar proxy
+- Kontrol `Max Percobaan Proxy / akun` untuk membatasi retry proxy agar proses lebih cepat
 - Parser proxy multi-format (host:port, user:pass@host:port, ip:port:user:pass, JSON, template URL)
 - Auto temp mail provider emailfake.com
 - Domain email otomatis dari domain.txt
@@ -19,6 +20,7 @@ Fitur utama:
 - Export hasil report ke TXT
 - Export khusus API key ke format TXT/CSV/JSON
 - UI responsive untuk desktop, tablet, dan mobile (termasuk hasil tabel adaptif di layar kecil)
+- Default eksekusi lebih cepat: async pool, worker 4, OTP timeout 45 detik
 
 ## Struktur
 
@@ -63,6 +65,8 @@ Catatan:
 3. Build command: kosong.
 4. Output directory: .
 5. Deploy.
+
+Project ini menyertakan file `vercel.json` untuk memastikan endpoint `api/generate.js` berjalan di Node (`nodejs22.x`) dengan `maxDuration` 300 detik.
 
 Opsional environment variable:
 
@@ -130,10 +134,15 @@ Catatan penting runtime proxy:
 - Di project ini, dukungan itu aktif pada endpoint Vercel `api/generate.js` (runtime `nodejs`).
 - Untuk Cloudflare Workers/Pages Functions, gunakan format proxy template URL (contoh: `.../fetch?url={url}`), bukan forward proxy standar.
 - Jika runtime bukan Node.js, kandidat forward proxy akan otomatis di-skip agar tidak spam error berulang, lalu sistem lanjut ke kandidat proxy template/direct fallback.
-- UI akan melakukan pre-check capability backend. Jika runtime tidak support forward proxy dan semua input proxy bertipe host:port, proses batch akan ditolak lebih awal dengan pesan yang jelas.
-- Behavior terbaru: jika runtime tidak support forward proxy host:port, UI tidak akan stop total. Kandidat forward proxy akan di-skip otomatis. Jika tidak ada proxy template yang kompatibel, batch tetap lanjut dengan direct fallback.
+- UI melakukan pre-check capability backend untuk memberi status kompatibilitas. Jika runtime tidak support forward proxy host:port, kandidat tersebut akan di-skip otomatis; batch tetap lanjut menggunakan proxy template atau direct fallback.
 
 Anda juga bisa isi `Proxy Pool` (satu proxy per baris). Sistem akan mencoba proxy satu per satu jika attempt sebelumnya gagal.
+
+Agar tidak terlalu lama, atur `Max Percobaan Proxy / akun` ke nilai kecil (misalnya 1-3).
+
+Jika caller API (misalnya curl) tidak mengirim `proxyMaxAttempts`, backend otomatis memakai default `2` agar retry tidak terlalu panjang.
+
+Jika caller API tidak mengirim `requestTimeoutMs`, backend memakai default `15000` ms per request upstream untuk mencegah hang lama.
 
 Format yang didukung:
 
@@ -200,3 +209,14 @@ Solusi:
 - Gunakan residential/static proxy yang stabil.
 - Turunkan concurrency (set mode `sequential` atau kecilkan `Worker / Thread Count`).
 - Pertimbangkan akun berbayar Browserless jika butuh volume tinggi.
+
+## Troubleshooting FUNCTION_INVOCATION_TIMEOUT (Vercel)
+
+Jika Vercel menampilkan `FUNCTION_INVOCATION_TIMEOUT`:
+
+- Pastikan sudah redeploy commit terbaru (yang sudah punya `vercel.json`, default `proxyMaxAttempts`, dan timeout upstream).
+- Untuk request manual/curl, kirim payload yang dibatasi, contoh:
+: `maxOtpWaitSeconds` 25-45
+: `proxyMaxAttempts` 1-2
+: `requestTimeoutMs` 10000-15000
+- Uji health endpoint dulu: `GET /api/generate` harus cepat mengembalikan JSON status.

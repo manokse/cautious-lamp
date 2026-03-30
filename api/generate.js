@@ -1,7 +1,6 @@
-import { generateBrowserlessAccount } from "../shared/browserless-generator.js";
-
 export const config = {
   runtime: "nodejs",
+  maxDuration: 300,
 };
 
 function jsonResponse(payload, status = 200) {
@@ -51,6 +50,7 @@ export default async function handler(request) {
   }
 
   try {
+    const { generateBrowserlessAccount } = await import("../shared/browserless-generator.js");
     const envAnonKey =
       typeof process !== "undefined" && process?.env?.BROWSERLESS_SUPABASE_ANON_KEY
         ? process.env.BROWSERLESS_SUPABASE_ANON_KEY
@@ -64,6 +64,8 @@ export default async function handler(request) {
       proxyEnabled: Boolean(body.proxyEnabled),
       proxyUrl: body.proxyUrl || "",
       proxyUrls: body.proxyUrls || [],
+      proxyMaxAttempts: body.proxyMaxAttempts ?? 2,
+      requestTimeoutMs: body.requestTimeoutMs ?? 15000,
       anonKey: envAnonKey,
     });
 

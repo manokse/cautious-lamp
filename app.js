@@ -10,6 +10,7 @@ const ui = {
   proxyEnabled: document.getElementById("proxyEnabled"),
   proxyUrl: document.getElementById("proxyUrl"),
   proxyPool: document.getElementById("proxyPool"),
+  proxyMaxAttempts: document.getElementById("proxyMaxAttempts"),
   keyExportFormat: document.getElementById("keyExportFormat"),
   startBtn: document.getElementById("startBtn"),
   stopBtn: document.getElementById("stopBtn"),
@@ -191,12 +192,20 @@ function isForwardProxyLike(value) {
 async function detectBackendCapabilities() {
   for (const endpoint of API_ENDPOINTS) {
     try {
-      const response = await fetch(endpoint, {
-        method: "GET",
-        headers: {
-          accept: "application/json",
-        },
-      });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      let response;
+      try {
+        response = await fetch(endpoint, {
+          method: "GET",
+          headers: {
+            accept: "application/json",
+          },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!response.ok) {
         continue;
@@ -349,17 +358,40 @@ function refreshRunStatus(config) {
 
 async function callGenerateApi(payload, signal) {
   const failures = [];
+  const requestTimeoutMs = Math.max(
+    45000,
+    ((Number.parseInt(String(payload?.maxOtpWaitSeconds || 60), 10) || 60) * 1000) + 45000,
+  );
 
   for (const endpoint of API_ENDPOINTS) {
     try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify(payload),
-        signal,
-      });
+      const requestController = new AbortController();
+      const onAbort = () => requestController.abort();
+      if (signal) {
+        if (signal.aborted) {
+          requestController.abort();
+        } else {
+          signal.addEventListener("abort", onAbort, { once: true });
+        }
+      }
+
+      const timeoutId = setTimeout(() => requestController.abort(), requestTimeoutMs);
+      let response;
+      try {
+        response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(payload),
+          signal: requestController.signal,
+        });
+      } finally {
+        clearTimeout(timeoutId);
+        if (signal) {
+          signal.removeEventListener("abort", onAbort);
+        }
+      }
 
       const rawText = await response.text();
       let data = {};
@@ -390,7 +422,13 @@ async function callGenerateApi(payload, signal) {
       throw new Error(errorMessage);
     } catch (error) {
       if (isAbortError(error)) {
-        throw error;
+        if (signal?.aborted) {
+          throw error;
+        }
+
+        throw new Error(
+          `Request timeout (${Math.round(requestTimeoutMs / 1000)}s). Turunkan jumlah akun/proxy attempts atau kecilkan OTP timeout.`,
+        );
       }
 
       const message = error instanceof Error ? error.message : "unknown error";
@@ -572,6 +610,10 @@ function buildRunConfig() {
   const proxyEnabled = ui.proxyEnabled.checked;
   const proxyUrl = normalizeProxyToken(ui.proxyUrl.value);
   const proxyUrls = parseProxyPool(ui.proxyPool.value);
+  const proxyMaxAttempts = Math.max(
+    1,
+    Math.min(12, Number.parseInt(ui.proxyMaxAttempts.value, 10) || 2),
+  );
 
   return {
     count,
@@ -582,6 +624,7 @@ function buildRunConfig() {
     proxyEnabled,
     proxyUrl,
     proxyUrls,
+    proxyMaxAttempts,
   };
 }
 
@@ -595,6 +638,7 @@ async function processSingleItem(currentIndex, config) {
     proxyEnabled: config.proxyEnabled,
     proxyUrl: config.proxyUrl,
     proxyUrls: config.proxyUrls,
+    proxyMaxAttempts: config.proxyMaxAttempts,
     preferredToken: makePreferredToken(),
     profile: buildFakeProfile(),
   };
@@ -715,6 +759,7 @@ async function runBatchGeneration() {
           proxyEnabled: true,
           proxyUrl: templateLike[0],
           proxyUrls: templateLike.slice(1),
+          proxyMaxAttempts: Math.max(1, Math.min(config.proxyMaxAttempts, templateLike.length)),
         };
 
         setStatus(
@@ -728,6 +773,7 @@ async function runBatchGeneration() {
           proxyEnabled: false,
           proxyUrl: "",
           proxyUrls: [],
+          proxyMaxAttempts: 1,
         };
 
         setStatus(
@@ -792,6 +838,7 @@ function syncProxyControls() {
   const enabled = ui.proxyEnabled.checked;
   ui.proxyUrl.disabled = !enabled;
   ui.proxyPool.disabled = !enabled;
+  ui.proxyMaxAttempts.disabled = !enabled;
 }
 
 function syncExecutionControls() {
