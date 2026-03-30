@@ -800,6 +800,7 @@ function isRetryableAttemptError(message) {
 
 async function generateBrowserlessAccountSingle(options = {}, proxyOptions, proxyMeta) {
   const effectiveProxy = proxyOptions || { proxyEnabled: false, proxyUrl: "" };
+  const emailfakeProxy = { proxyEnabled: false, proxyUrl: "" };
   const effectiveMeta = proxyMeta || { attempt: 1, total: 1, label: "direct" };
 
   const maxOtpWaitSeconds = Math.max(
@@ -811,6 +812,7 @@ async function generateBrowserlessAccountSingle(options = {}, proxyOptions, prox
   operationLog.push(
     `[${nowIso()}] proxy attempt ${effectiveMeta.attempt}/${effectiveMeta.total}: ${effectiveMeta.label}`,
   );
+  operationLog.push(`[${nowIso()}] emailfake transport: direct (proxy bypass enabled)`);
 
   const requestUrl = String(options.requestUrl || "https://localhost");
   const domains = await loadDomains(requestUrl, { proxyEnabled: false, proxyUrl: "" });
@@ -828,7 +830,7 @@ async function generateBrowserlessAccountSingle(options = {}, proxyOptions, prox
 
   operationLog.push(`[${nowIso()}] mailbox prepared: ${email}`);
 
-  const setupResult = await setupEmailfakeMailbox(mailbox, effectiveProxy);
+  const setupResult = await setupEmailfakeMailbox(mailbox, emailfakeProxy);
   operationLog.push(`[${nowIso()}] emailfake setup status: ${setupResult.setupStatus}`);
 
   await postDataBrowserless(
@@ -852,7 +854,7 @@ async function generateBrowserlessAccountSingle(options = {}, proxyOptions, prox
     mailbox,
     setupResult.cookieHeader,
     maxOtpWaitSeconds,
-    effectiveProxy,
+    emailfakeProxy,
     operationLog,
   );
 

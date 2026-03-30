@@ -104,6 +104,8 @@ Opsional environment variable:
 
 Mode proxy aktif bila toggle proxy dinyalakan dan Proxy URL diisi.
 
+Khusus emailfake.com: request setup inbox dan polling OTP selalu direct (tanpa proxy), meskipun mode proxy aktif. Proxy hanya dipakai untuk request ke endpoint Browserless.
+
 Anda juga bisa isi `Proxy Pool` (satu proxy per baris). Sistem akan mencoba proxy satu per satu jika attempt sebelumnya gagal.
 
 Format yang didukung:
