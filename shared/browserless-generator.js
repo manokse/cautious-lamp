@@ -472,8 +472,15 @@ async function loadNodeUndiciModule() {
     return NODE_UNDICI_PROMISE;
   }
 
-  const dynamicImport = new Function("moduleName", "return import(moduleName)");
-  NODE_UNDICI_PROMISE = dynamicImport("undici");
+  NODE_UNDICI_PROMISE = import("undici").catch(async (primaryError) => {
+    try {
+      // Fallback for runtimes that expose undici as a built-in module.
+      return await import("node:undici");
+    } catch {
+      throw primaryError;
+    }
+  });
+
   return NODE_UNDICI_PROMISE;
 }
 
@@ -487,9 +494,10 @@ async function fetchWithNodeForwardProxy(targetUrl, init, proxyUrl) {
   let undiciModule = null;
   try {
     undiciModule = await loadNodeUndiciModule();
-  } catch {
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "unknown";
     throw new Error(
-      "Standard forward proxy membutuhkan dependency undici di runtime Node.js.",
+      `Standard forward proxy membutuhkan dependency undici di runtime Node.js. Detail: ${detail}`,
     );
   }
 
