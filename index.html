@@ -21,7 +21,8 @@
       <h1>Generate Multi API Key Otomatis</h1>
       <p class="subtitle">
         Mendukung jumlah API key custom, toggle proxy, auto temp mail provider
-        emailfake.com, dan domain acuan dari file domain.txt.
+        emailfake.com, domain acuan dari file domain.txt, serta input proxy
+        multi-format.
       </p>
     </header>
 
@@ -32,7 +33,20 @@
         <div class="field-grid">
           <label>
             Jumlah API Key
-            <input id="apiKeyCount" type="number" min="1" max="30" value="1" />
+            <input id="apiKeyCount" type="number" min="1" max="80" value="1" />
+          </label>
+
+          <label>
+            Mode Eksekusi
+            <select id="executionMode">
+              <option value="sequential">sequential</option>
+              <option value="async_pool">async pool (thread/worker)</option>
+            </select>
+          </label>
+
+          <label>
+            Worker / Thread Count
+            <input id="workerCount" type="number" min="1" max="12" value="3" />
           </label>
 
           <label>
@@ -70,7 +84,7 @@
             <input
               id="proxyUrl"
               type="text"
-              placeholder="https://proxy.example/fetch?url={url}"
+              placeholder="host:port | user:pass@host:port | https://proxy.example/fetch?url={url}"
               disabled
             />
           </label>
@@ -80,9 +94,30 @@
             <textarea
               id="proxyPool"
               rows="4"
-              placeholder="https://proxy1.example/fetch?url={url}\nhttps://proxy2.example/fetch?url={url}"
+              placeholder="1.2.3.4:8080\n1.2.3.4:8080:user:pass\nuser:pass@proxy.example:9000\nhttps://proxy.example/fetch?target={url}"
               disabled
             ></textarea>
+          </label>
+
+          <details class="span-2 proxy-help">
+            <summary>Format Proxy yang didukung</summary>
+            <ul>
+              <li>Template URL: https://proxy.example/fetch?url={url}</li>
+              <li>Template target/destination: ...?target={url} atau ...?destination={url}</li>
+              <li>Host + port: 1.2.3.4:8080</li>
+              <li>Credential + host: user:pass@proxy.example:8080</li>
+              <li>Format 4 kolom: 1.2.3.4:8080:user:pass</li>
+              <li>JSON object: {"host":"1.2.3.4","port":8080,"username":"u","password":"p"}</li>
+            </ul>
+          </details>
+
+          <label>
+            Format Download API Key
+            <select id="keyExportFormat">
+              <option value="txt">txt</option>
+              <option value="csv">csv</option>
+              <option value="json">json</option>
+            </select>
           </label>
         </div>
 
@@ -90,11 +125,12 @@
           <button id="startBtn" class="btn btn-primary">Start Generate</button>
           <button id="stopBtn" class="btn btn-ghost">Stop</button>
           <button id="downloadBtn" class="btn btn-ghost">Download TXT</button>
+          <button id="downloadKeysBtn" class="btn btn-ghost">Download API Keys</button>
         </div>
 
         <div class="status-box">
           <p id="statusText">Status: idle</p>
-          <p id="summaryText">Success: 0 | Failed: 0 | Total: 0</p>
+          <p id="summaryText">Success: 0 | Failed: 0 | Stopped: 0 | Total: 0</p>
         </div>
 
         <div class="endpoint-box">
@@ -138,9 +174,9 @@
         [Action required] Verify your email address.
       </p>
       <p>
-        Catatan proxy: gunakan URL proxy template yang memuat parameter
-        {url}, misalnya https://proxy.example/fetch?url={url}. Anda juga bisa
-        isi Proxy Pool agar sistem auto-retry antar proxy.
+        Catatan proxy: sistem akan menormalisasi beberapa format populer
+        (host:port, user:pass@host:port, ip:port:user:pass, template URL, JSON)
+        dan auto-retry antar proxy jika Proxy Pool diisi.
       </p>
     </footer>
 

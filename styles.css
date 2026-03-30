@@ -167,6 +167,14 @@ textarea {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  position: sticky;
+  top: 10px;
+  z-index: 4;
+  padding: 8px;
+  border: 1px solid rgba(203, 183, 147, 0.55);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  backdrop-filter: blur(4px);
 }
 
 .btn {
@@ -192,6 +200,29 @@ textarea {
   color: var(--ink);
   background: #fff;
   border: 1px solid var(--line);
+}
+
+.proxy-help {
+  border: 1px dashed #cbb793;
+  border-radius: 12px;
+  background: rgba(214, 76, 47, 0.07);
+  padding: 8px 10px;
+}
+
+.proxy-help summary {
+  cursor: pointer;
+  color: #4c2f24;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.proxy-help ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--ink-soft);
+  display: grid;
+  gap: 4px;
+  font-size: 0.8rem;
 }
 
 .status-box {
@@ -259,6 +290,11 @@ th {
   font-weight: 700;
 }
 
+.tag-stop {
+  color: #9a6f12;
+  font-weight: 700;
+}
+
 .copy-btn {
   border: 1px solid var(--line);
   background: #fff;
@@ -267,6 +303,12 @@ th {
   font-weight: 700;
   padding: 4px 8px;
   cursor: pointer;
+}
+
+.api-key-wrap {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
 }
 
 pre {
@@ -331,5 +373,81 @@ pre {
 
   .span-2 {
     grid-column: span 1;
+  }
+
+  .top-actions {
+    position: static;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .btn {
+    width: 100%;
+  }
+
+  .hero {
+    margin-bottom: 12px;
+  }
+}
+
+@media (max-width: 760px) {
+  .card {
+    padding: 14px;
+  }
+
+  .table-wrap {
+    border: none;
+    background: transparent;
+  }
+
+  table {
+    min-width: 0;
+    display: block;
+  }
+
+  thead {
+    display: none;
+  }
+
+  tbody {
+    display: grid;
+    gap: 10px;
+  }
+
+  tr {
+    display: grid;
+    gap: 5px;
+    border: 1px solid #d8cbb5;
+    border-radius: 12px;
+    padding: 10px;
+    background: #fff;
+  }
+
+  td {
+    display: grid;
+    grid-template-columns: 88px 1fr;
+    gap: 8px;
+    border-bottom: none;
+    padding: 3px 0;
+    font-size: 0.81rem;
+    word-break: break-word;
+  }
+
+  td::before {
+    content: attr(data-label);
+    color: #6b4f2e;
+    font-weight: 700;
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .api-key-wrap {
+    width: 100%;
+  }
+
+  .copy-btn {
+    min-height: 30px;
   }
 }

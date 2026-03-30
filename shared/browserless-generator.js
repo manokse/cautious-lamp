@@ -290,17 +290,167 @@ async function readJsonSafe(response) {
   }
 }
 
+function toBase64(value) {
+  const text = String(value || "");
+  if (typeof btoa === "function") {
+    return btoa(text);
+  }
+
+  if (typeof Buffer !== "undefined") {
+    return Buffer.from(text, "utf-8").toString("base64");
+  }
+
+  return text;
+}
+
+function buildProxyUrlFromParts(protocol, host, port, username, password) {
+  const safeProtocol = protocol === "https" ? "https" : "http";
+  const safeHost = String(host || "").trim();
+  const safePort = String(port || "").trim();
+  if (!safeHost || !safePort) {
+    return "";
+  }
+
+  if (username || password) {
+    const userPart = encodeURIComponent(String(username || ""));
+    const passPart = encodeURIComponent(String(password || ""));
+    return `${safeProtocol}://${userPart}:${passPart}@${safeHost}:${safePort}`;
+  }
+
+  return `${safeProtocol}://${safeHost}:${safePort}`;
+}
+
+function normalizeProxyEndpointInput(proxyUrlRaw) {
+  const raw = String(proxyUrlRaw || "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  // Support JSON style proxy objects from rotating-proxy providers.
+  if (raw.startsWith("{") && raw.endsWith("}")) {
+    try {
+      const parsed = JSON.parse(raw);
+      const host = String(parsed.host || parsed.hostname || "").trim();
+      const port = String(parsed.port || "").trim();
+      const protocolRaw = String(parsed.protocol || parsed.scheme || "http").toLowerCase();
+      const protocol = protocolRaw.startsWith("https") ? "https" : "http";
+      const username = String(parsed.username || parsed.user || "").trim();
+      const password = String(parsed.password || parsed.pass || "").trim();
+      const fromJson = buildProxyUrlFromParts(protocol, host, port, username, password);
+      if (fromJson) {
+        return fromJson;
+      }
+    } catch {
+      // Ignore invalid JSON and continue with other formats.
+    }
+  }
+
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw)) {
+    return raw;
+  }
+
+  const compact = raw.replace(/\s+/g, "");
+
+  // Format: ip:port:user:pass
+  const ipPortUserPass = compact.match(/^([^:\/?#@]+):(\d{2,5}):([^:\/?#@]+):(.+)$/);
+  if (ipPortUserPass) {
+    const [, host, port, username, password] = ipPortUserPass;
+    return buildProxyUrlFromParts("http", host, port, username, password);
+  }
+
+  // Format: user:pass@host:port
+  const userPassHostPort = compact.match(/^([^:\/?#@]+):([^\/?#@]+)@([^:\/?#@]+):(\d{2,5})$/);
+  if (userPassHostPort) {
+    const [, username, password, host, port] = userPassHostPort;
+    return buildProxyUrlFromParts("http", host, port, username, password);
+  }
+
+  // Format: host:port
+  const hostPort = compact.match(/^([^:\/?#@]+):(\d{2,5})$/);
+  if (hostPort) {
+    const [, host, port] = hostPort;
+    return buildProxyUrlFromParts("http", host, port, "", "");
+  }
+
+  if (compact.includes("/") && !compact.startsWith("/")) {
+    return `https://${compact}`;
+  }
+
+  return raw;
+}
+
+function applyProxyTemplate(proxyUrl, targetUrl) {
+  const encoded = encodeURIComponent(targetUrl);
+  const base64 = toBase64(targetUrl);
+
+  const replacements = [
+    ["{{url}}", encoded],
+    ["{url}", encoded],
+    ["%url%", encoded],
+    ["$URL", encoded],
+    ["{{target}}", encoded],
+    ["{target}", encoded],
+    ["{{raw_url}}", targetUrl],
+    ["{raw_url}", targetUrl],
+    ["{{base64_url}}", base64],
+    ["{base64_url}", base64],
+    ["{{url_b64}}", base64],
+    ["{url_b64}", base64],
+  ];
+
+  let output = proxyUrl;
+  let replaced = false;
+  for (const [token, value] of replacements) {
+    if (output.includes(token)) {
+      output = output.split(token).join(value);
+      replaced = true;
+    }
+  }
+
+  if (replaced) {
+    return output;
+  }
+
+  try {
+    const url = new URL(proxyUrl);
+    const keys = ["url", "target", "destination", "dest", "u", "endpoint"];
+    const existingKey = keys.find((key) => url.searchParams.has(key));
+    if (existingKey) {
+      url.searchParams.set(existingKey, targetUrl);
+    } else {
+      url.searchParams.set("url", targetUrl);
+    }
+
+    return url.toString();
+  } catch {
+    const separator = proxyUrl.includes("?") ? "&" : "?";
+    return `${proxyUrl}${separator}url=${encoded}`;
+  }
+}
+
+function buildProxyAuthorizationHeader(proxyUrl) {
+  try {
+    const normalized = normalizeProxyEndpointInput(proxyUrl);
+    const parsed = new URL(normalized);
+    if (!parsed.username && !parsed.password) {
+      return "";
+    }
+
+    const user = decodeURIComponent(parsed.username || "");
+    const pass = decodeURIComponent(parsed.password || "");
+    return `Basic ${toBase64(`${user}:${pass}`)}`;
+  } catch {
+    return "";
+  }
+}
+
 function buildProxyTarget(proxyUrl, targetUrl) {
   if (!proxyUrl) {
     return targetUrl;
   }
 
-  if (proxyUrl.includes("{url}")) {
-    return proxyUrl.replace("{url}", encodeURIComponent(targetUrl));
-  }
-
-  const separator = proxyUrl.includes("?") ? "&" : "?";
-  return `${proxyUrl}${separator}url=${encodeURIComponent(targetUrl)}`;
+  const normalized = normalizeProxyEndpointInput(proxyUrl);
+  return applyProxyTemplate(normalized, targetUrl);
 }
 
 async function requestWithProxy(targetUrl, init, options) {
@@ -312,6 +462,11 @@ async function requestWithProxy(targetUrl, init, options) {
   const proxyTarget = buildProxyTarget(String(options.proxyUrl), targetUrl);
   const headers = new Headers(init?.headers || {});
   headers.set("x-target-url", targetUrl);
+
+  const proxyAuth = buildProxyAuthorizationHeader(String(options.proxyUrl));
+  if (proxyAuth && !headers.has("proxy-authorization")) {
+    headers.set("proxy-authorization", proxyAuth);
+  }
 
   return fetch(proxyTarget, {
     ...init,
@@ -575,6 +730,7 @@ function normalizeProxyUrlsInput(proxyUrls) {
   if (Array.isArray(proxyUrls)) {
     return proxyUrls
       .map((item) => String(item || "").trim())
+      .filter((item) => item && !item.startsWith("#"))
       .filter(Boolean);
   }
 
@@ -584,15 +740,16 @@ function normalizeProxyUrlsInput(proxyUrls) {
   }
 
   return raw
-    .split(/[\r\n,;]+/)
+    .split(/[\r\n;|]+/)
     .map((item) => item.trim())
+    .filter((item) => item && !item.startsWith("#"))
     .filter(Boolean);
 }
 
 function buildProxyCandidates(options) {
   const proxyEnabled = Boolean(options.proxyEnabled);
   const merged = [];
-  const singleProxy = String(options.proxyUrl || "").trim();
+  const singleProxy = normalizeProxyEndpointInput(options.proxyUrl || "");
   const proxyPool = normalizeProxyUrlsInput(options.proxyUrls);
 
   if (singleProxy) {
@@ -600,8 +757,9 @@ function buildProxyCandidates(options) {
   }
 
   for (const item of proxyPool) {
-    if (!merged.includes(item)) {
-      merged.push(item);
+    const normalized = normalizeProxyEndpointInput(item);
+    if (normalized && !merged.includes(normalized)) {
+      merged.push(normalized);
     }
   }
 

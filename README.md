@@ -5,14 +5,20 @@ Website + serverless API untuk generate API key Browserless secara batch.
 Fitur utama:
 
 - Pilih jumlah API key yang ingin digenerate
+- Mode eksekusi sequential atau async pool (worker/thread)
+- Atur jumlah worker/thread secara custom
+- Tombol stop untuk membatalkan proses yang sedang berjalan
 - Opsi proxy on/off
 - Proxy pool (multi proxy) dengan auto-retry antar proxy
+- Parser proxy multi-format (host:port, user:pass@host:port, ip:port:user:pass, JSON, template URL)
 - Auto temp mail provider emailfake.com
 - Domain email otomatis dari domain.txt
 - OTP parser untuk format inbox seperti:
   - Subject: [Action required] Verify your email address
   - Body yang berisi kode 6 digit verifikasi
-- Export hasil ke TXT
+- Export hasil report ke TXT
+- Export khusus API key ke format TXT/CSV/JSON
+- UI responsive untuk desktop, tablet, dan mobile (termasuk hasil tabel adaptif di layar kecil)
 
 ## Struktur
 
@@ -103,8 +109,13 @@ Anda juga bisa isi `Proxy Pool` (satu proxy per baris). Sistem akan mencoba prox
 Format yang didukung:
 
 - https://proxy.example/fetch?url={url}
+- https://proxy.example/fetch?target={url}
+- 1.2.3.4:8080
+- user:pass@proxy.example:8080
+- 1.2.3.4:8080:user:pass
+- {"host":"1.2.3.4","port":8080,"username":"u","password":"p"}
 
-Jika placeholder {url} tidak disediakan, aplikasi akan otomatis menambahkan query parameter url=encodedTarget.
+Jika placeholder URL tidak disediakan, aplikasi akan mencoba menambahkan parameter target (`url`, `target`, `destination`, dll) secara otomatis.
 
 ## Catatan keamanan
 
@@ -156,5 +167,5 @@ Solusi:
 
 - Aktifkan proxy (IP berbeda) di UI.
 - Gunakan residential/static proxy yang stabil.
-- Turunkan concurrency (generate 1 per batch terlebih dulu).
+- Turunkan concurrency (set mode `sequential` atau kecilkan `Worker / Thread Count`).
 - Pertimbangkan akun berbayar Browserless jika butuh volume tinggi.
