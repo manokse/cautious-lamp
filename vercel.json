@@ -2,12 +2,7 @@
   "functions": {
     "api/generate.js": {
       "maxDuration": 300,
-      "includeFiles": [
-        "node_modules/https-proxy-agent/**",
-        "node_modules/agent-base/**",
-        "node_modules/debug/**",
-        "node_modules/ms/**"
-      ]
+      "includeFiles": "node_modules/**"
     }
   }
 }
