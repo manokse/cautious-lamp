@@ -1,7 +1,11 @@
+import { HttpsProxyAgent } from "https-proxy-agent";
+
 export const config = {
   runtime: "nodejs",
   maxDuration: 300,
 };
+
+const NODE_PROXY_TRANSPORT = HttpsProxyAgent?.name || "HttpsProxyAgent";
 
 function commonHeaders() {
   return {
@@ -104,6 +108,7 @@ function healthPayload() {
     method: "GET",
     runtime: "nodejs",
     forwardProxySupported: true,
+    proxyTransport: NODE_PROXY_TRANSPORT,
   };
 }
 
