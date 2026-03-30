@@ -66,7 +66,7 @@ Catatan:
 4. Output directory: .
 5. Deploy.
 
-Project ini menyertakan file `vercel.json` untuk memastikan endpoint `api/generate.js` berjalan di Node (`nodejs22.x`) dengan `maxDuration` 300 detik.
+Project ini menyertakan file `vercel.json` untuk mengatur `maxDuration` endpoint `api/generate.js` ke 300 detik. Runtime Node ditetapkan di `api/generate.js` melalui `export const config = { runtime: "nodejs" }`.
 
 Opsional environment variable:
 
