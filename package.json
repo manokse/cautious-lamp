@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "undici": "^6.21.0"
+    "https-proxy-agent": "^8.0.0"
   }
 }
