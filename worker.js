@@ -38,7 +38,12 @@ export default {
       }
 
       if (request.method === "GET") {
-        return jsonResponse({ ok: true, service: "browserless-generator", runtime: "worker" }, 200);
+        return jsonResponse({
+          ok: true,
+          service: "browserless-generator",
+          runtime: "worker",
+          forwardProxySupported: false,
+        }, 200);
       }
 
       if (request.method !== "POST") {

@@ -815,7 +815,21 @@ async function postGraphql(operationName, query, variables, context) {
   const body = await readJsonSafe(response);
 
   if (!response.ok) {
-    throw new Error(`api.browserless.io/graphql failed: ${response.status}`);
+    const detail = pickFirstString([
+      body?.errors?.[0]?.message,
+      body?.message,
+      body?.error,
+      body?.rawText,
+    ]);
+
+    if (/2 free accounts per ip address/i.test(String(detail || ""))) {
+      throw new Error(
+        `GraphQL ${operationName} error: ${detail}. Gunakan proxy/residential IP berbeda atau akun berbayar untuk lanjut generate.`,
+      );
+    }
+
+    const suffix = detail ? ` (${String(detail).slice(0, 220)})` : "";
+    throw new Error(`api.browserless.io/graphql failed: ${response.status}${suffix}`);
   }
 
   if (body?.errors?.length) {
@@ -1272,8 +1286,36 @@ async function generateBrowserlessAccountSingle(options = {}, proxyOptions, prox
 }
 
 export async function generateBrowserlessAccount(options = {}) {
-  const proxyCandidates = buildProxyCandidates(options);
+  const allCandidates = buildProxyCandidates(options);
+  const skippedForwardProxyLabels = [];
+  const proxyCandidates = [];
+
+  for (const candidate of allCandidates) {
+    const isForwardProxy = Boolean(
+      candidate?.proxyEnabled &&
+      candidate?.proxyUrl &&
+      isLikelyForwardProxyUrl(candidate.proxyUrl),
+    );
+
+    if (isForwardProxy && !isNodeRuntime()) {
+      skippedForwardProxyLabels.push(candidate.label || candidate.proxyUrl || "forward-proxy");
+      continue;
+    }
+
+    proxyCandidates.push(candidate);
+  }
+
+  if (!proxyCandidates.length) {
+    proxyCandidates.push({ proxyEnabled: false, proxyUrl: "", label: "direct-fallback" });
+  }
+
   const errors = [];
+
+  if (skippedForwardProxyLabels.length) {
+    errors.push(
+      `[proxy-compat] skipped ${skippedForwardProxyLabels.length} forward proxy candidate(s) because runtime is not Node.js`,
+    );
+  }
 
   for (let index = 0; index < proxyCandidates.length; index += 1) {
     const candidate = proxyCandidates[index];

@@ -117,6 +117,8 @@ Catatan penting runtime proxy:
 - Proxy format host:port / user:pass@host:port (forward proxy standar) membutuhkan runtime Node.js.
 - Di project ini, dukungan itu aktif pada endpoint Vercel `api/generate.js` (runtime `nodejs`).
 - Untuk Cloudflare Workers/Pages Functions, gunakan format proxy template URL (contoh: `.../fetch?url={url}`), bukan forward proxy standar.
+- Jika runtime bukan Node.js, kandidat forward proxy akan otomatis di-skip agar tidak spam error berulang, lalu sistem lanjut ke kandidat proxy template/direct fallback.
+- UI akan melakukan pre-check capability backend. Jika runtime tidak support forward proxy dan semua input proxy bertipe host:port, proses batch akan ditolak lebih awal dengan pesan yang jelas.
 
 Anda juga bisa isi `Proxy Pool` (satu proxy per baris). Sistem akan mencoba proxy satu per satu jika attempt sebelumnya gagal.
 

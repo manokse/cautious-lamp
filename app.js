@@ -33,6 +33,10 @@ const state = {
   totalTarget: 0,
   runMode: "sequential",
   workers: 1,
+  backendCaps: {
+    runtime: "unknown",
+    forwardProxySupported: null,
+  },
 };
 
 function pick(values) {
@@ -121,6 +125,82 @@ function parseProxyPool(rawText) {
   }
 
   return unique;
+}
+
+function hasTemplateToken(value) {
+  const text = String(value || "");
+  return /\{\{?url\}?\}|\{\{?target\}?\}|\{\{?raw_url\}?\}|\{\{?base64_url\}?\}|\{\{?url_b64\}?\}|%url%|\$URL/i.test(text);
+}
+
+function isForwardProxyLike(value) {
+  const text = String(value || "").trim();
+  if (!text || hasTemplateToken(text) || text.startsWith("{")) {
+    return false;
+  }
+
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(text)) {
+    try {
+      const parsed = new URL(text);
+      if (!/^https?:$/i.test(parsed.protocol)) {
+        return false;
+      }
+
+      const path = parsed.pathname || "/";
+      const hasPath = path && path !== "/";
+      const hasKnownGatewayQuery = ["url", "target", "destination", "dest", "u", "endpoint"]
+        .some((key) => parsed.searchParams.has(key));
+
+      return !hasPath && !hasKnownGatewayQuery;
+    } catch {
+      return false;
+    }
+  }
+
+  const compact = text.replace(/\s+/g, "");
+  if (/^[^:\/?#@]+:\d{2,5}$/.test(compact)) {
+    return true;
+  }
+
+  if (/^[^:\/?#@]+:[^\/?#@]+@[^:\/?#@]+:\d{2,5}$/.test(compact)) {
+    return true;
+  }
+
+  if (/^[^:\/?#@]+:\d{2,5}:[^:\/?#@]+:.+$/.test(compact)) {
+    return true;
+  }
+
+  return false;
+}
+
+async function detectBackendCapabilities() {
+  for (const endpoint of API_ENDPOINTS) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "GET",
+        headers: {
+          accept: "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        continue;
+      }
+
+      const data = await response.json().catch(() => ({}));
+      const runtime = String(data?.runtime || "unknown");
+      const forwardProxySupported = typeof data?.forwardProxySupported === "boolean"
+        ? data.forwardProxySupported
+        : null;
+
+      state.backendCaps = {
+        runtime,
+        forwardProxySupported,
+      };
+      return;
+    } catch {
+      // Try next endpoint.
+    }
+  }
 }
 
 function setStatus(text) {
@@ -607,6 +687,21 @@ async function runBatchGeneration() {
     return;
   }
 
+  if (config.proxyEnabled && state.backendCaps.forwardProxySupported === false) {
+    const allProxyInputs = [config.proxyUrl, ...config.proxyUrls].filter(Boolean);
+    const forwardLike = allProxyInputs.filter((item) => isForwardProxyLike(item));
+    const hasTemplateLike = allProxyInputs.some((item) => !isForwardProxyLike(item));
+
+    if (forwardLike.length && !hasTemplateLike) {
+      setStatus(
+        `runtime ${state.backendCaps.runtime} tidak mendukung forward proxy host:port. Gunakan proxy template URL (...?url={url}) atau deploy backend Node.js.`,
+      );
+      ui.lastLog.textContent =
+        `Proxy compatibility check: runtime=${state.backendCaps.runtime}, unsupported_forward_candidates=${forwardLike.length}`;
+      return;
+    }
+  }
+
   state.running = true;
   state.stopRequested = false;
   state.results = [];
@@ -695,3 +790,4 @@ syncProxyControls();
 syncExecutionControls();
 setStatus("idle");
 updateSummary();
+detectBackendCapabilities();

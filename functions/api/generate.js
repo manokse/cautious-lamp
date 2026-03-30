@@ -28,7 +28,13 @@ export async function onRequest(context) {
   }
 
   if (request.method === "GET") {
-    return jsonResponse({ ok: true, service: "browserless-generator", method: "GET" }, 200);
+    return jsonResponse({
+      ok: true,
+      service: "browserless-generator",
+      method: "GET",
+      runtime: "cf-pages",
+      forwardProxySupported: false,
+    }, 200);
   }
 
   if (request.method !== "POST") {
