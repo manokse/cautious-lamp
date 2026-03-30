@@ -1,4 +1,4 @@
-name = "browserless-auto-generator"
+name = "cautious-lamp"
 main = "worker.js"
 compatibility_date = "2026-03-30"
 
