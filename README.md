@@ -119,6 +119,7 @@ Catatan penting runtime proxy:
 - Untuk Cloudflare Workers/Pages Functions, gunakan format proxy template URL (contoh: `.../fetch?url={url}`), bukan forward proxy standar.
 - Jika runtime bukan Node.js, kandidat forward proxy akan otomatis di-skip agar tidak spam error berulang, lalu sistem lanjut ke kandidat proxy template/direct fallback.
 - UI akan melakukan pre-check capability backend. Jika runtime tidak support forward proxy dan semua input proxy bertipe host:port, proses batch akan ditolak lebih awal dengan pesan yang jelas.
+- Behavior terbaru: jika runtime tidak support forward proxy host:port, UI tidak akan stop total. Kandidat forward proxy akan di-skip otomatis. Jika tidak ada proxy template yang kompatibel, batch tetap lanjut dengan direct fallback.
 
 Anda juga bisa isi `Proxy Pool` (satu proxy per baris). Sistem akan mencoba proxy satu per satu jika attempt sebelumnya gagal.
 

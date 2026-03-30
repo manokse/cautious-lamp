@@ -680,7 +680,7 @@ async function runBatchGeneration() {
     return;
   }
 
-  const config = buildRunConfig();
+  let config = buildRunConfig();
 
   if (config.proxyEnabled && !config.proxyUrl && config.proxyUrls.length === 0) {
     setStatus("proxy aktif tapi Proxy URL/Proxy Pool kosong");
@@ -690,15 +690,36 @@ async function runBatchGeneration() {
   if (config.proxyEnabled && state.backendCaps.forwardProxySupported === false) {
     const allProxyInputs = [config.proxyUrl, ...config.proxyUrls].filter(Boolean);
     const forwardLike = allProxyInputs.filter((item) => isForwardProxyLike(item));
-    const hasTemplateLike = allProxyInputs.some((item) => !isForwardProxyLike(item));
+    const templateLike = allProxyInputs.filter((item) => !isForwardProxyLike(item));
 
-    if (forwardLike.length && !hasTemplateLike) {
-      setStatus(
-        `runtime ${state.backendCaps.runtime} tidak mendukung forward proxy host:port. Gunakan proxy template URL (...?url={url}) atau deploy backend Node.js.`,
-      );
-      ui.lastLog.textContent =
-        `Proxy compatibility check: runtime=${state.backendCaps.runtime}, unsupported_forward_candidates=${forwardLike.length}`;
-      return;
+    if (forwardLike.length) {
+      if (templateLike.length) {
+        config = {
+          ...config,
+          proxyEnabled: true,
+          proxyUrl: templateLike[0],
+          proxyUrls: templateLike.slice(1),
+        };
+
+        setStatus(
+          `runtime ${state.backendCaps.runtime}: ${forwardLike.length} forward proxy di-skip, lanjut pakai ${templateLike.length} proxy template kompatibel`,
+        );
+        ui.lastLog.textContent =
+          `Proxy compatibility check: runtime=${state.backendCaps.runtime}, skipped_forward=${forwardLike.length}, kept_template=${templateLike.length}`;
+      } else {
+        config = {
+          ...config,
+          proxyEnabled: false,
+          proxyUrl: "",
+          proxyUrls: [],
+        };
+
+        setStatus(
+          `runtime ${state.backendCaps.runtime} tidak mendukung forward proxy host:port. Proxy otomatis dinonaktifkan, lanjut direct fallback.`,
+        );
+        ui.lastLog.textContent =
+          `Proxy compatibility check: runtime=${state.backendCaps.runtime}, skipped_forward=${forwardLike.length}, fallback=direct`;
+      }
     }
   }
 
