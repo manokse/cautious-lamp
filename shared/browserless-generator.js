@@ -49,7 +49,9 @@ query getAccount($authToken: String) {
 `;
 
 const NODE_PROXY_AGENT_CACHE = new Map();
-let NODE_UNDICI_PROMISE = null;
+let NODE_HTTPS_PROXY_AGENT_PROMISE = null;
+let NODE_HTTP_MODULE_PROMISE = null;
+let NODE_HTTPS_MODULE_PROMISE = null;
 
 function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -467,21 +469,103 @@ function isLikelyForwardProxyUrl(proxyUrl) {
   }
 }
 
-async function loadNodeUndiciModule() {
-  if (NODE_UNDICI_PROMISE) {
-    return NODE_UNDICI_PROMISE;
+async function loadNodeHttpModules() {
+  if (!NODE_HTTP_MODULE_PROMISE) {
+    NODE_HTTP_MODULE_PROMISE = import("node:http");
   }
 
-  NODE_UNDICI_PROMISE = import("undici").catch(async (primaryError) => {
-    try {
-      // Fallback for runtimes that expose undici as a built-in module.
-      return await import("node:undici");
-    } catch {
-      throw primaryError;
+  if (!NODE_HTTPS_MODULE_PROMISE) {
+    NODE_HTTPS_MODULE_PROMISE = import("node:https");
+  }
+
+  const [httpModule, httpsModule] = await Promise.all([
+    NODE_HTTP_MODULE_PROMISE,
+    NODE_HTTPS_MODULE_PROMISE,
+  ]);
+
+  return { httpModule, httpsModule };
+}
+
+async function loadHttpsProxyAgentClass() {
+  if (NODE_HTTPS_PROXY_AGENT_PROMISE) {
+    return NODE_HTTPS_PROXY_AGENT_PROMISE;
+  }
+
+  NODE_HTTPS_PROXY_AGENT_PROMISE = import("https-proxy-agent").then((module) => {
+    const HttpsProxyAgent =
+      module?.HttpsProxyAgent || module?.default?.HttpsProxyAgent || module?.default;
+
+    if (typeof HttpsProxyAgent !== "function") {
+      throw new Error("HttpsProxyAgent export tidak ditemukan.");
     }
+
+    return HttpsProxyAgent;
   });
 
-  return NODE_UNDICI_PROMISE;
+  return NODE_HTTPS_PROXY_AGENT_PROMISE;
+}
+
+async function readNodeRequestBody(rawBody) {
+  if (typeof rawBody === "undefined" || rawBody === null) {
+    return null;
+  }
+
+  if (Buffer.isBuffer(rawBody)) {
+    return rawBody;
+  }
+
+  if (typeof rawBody === "string") {
+    return Buffer.from(rawBody);
+  }
+
+  if (rawBody instanceof URLSearchParams) {
+    return Buffer.from(rawBody.toString());
+  }
+
+  if (rawBody instanceof Uint8Array) {
+    return Buffer.from(rawBody);
+  }
+
+  if (rawBody instanceof ArrayBuffer) {
+    return Buffer.from(new Uint8Array(rawBody));
+  }
+
+  if (typeof Blob !== "undefined" && rawBody instanceof Blob) {
+    const bytes = await rawBody.arrayBuffer();
+    return Buffer.from(new Uint8Array(bytes));
+  }
+
+  throw new Error("request body type tidak didukung untuk forward proxy Node.");
+}
+
+function headersToNodeObject(headers) {
+  const output = {};
+  for (const [key, value] of headers.entries()) {
+    output[key] = value;
+  }
+  return output;
+}
+
+function responseHeadersFromNode(headers) {
+  const output = new Headers();
+  for (const [key, value] of Object.entries(headers || {})) {
+    if (typeof value === "undefined") {
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (typeof item !== "undefined") {
+          output.append(key, String(item));
+        }
+      }
+      continue;
+    }
+
+    output.set(key, String(value));
+  }
+
+  return output;
 }
 
 async function fetchWithNodeForwardProxy(targetUrl, init, proxyUrl) {
@@ -491,38 +575,120 @@ async function fetchWithNodeForwardProxy(targetUrl, init, proxyUrl) {
     );
   }
 
-  let undiciModule = null;
+  const target = new URL(targetUrl);
+  if (!/^https?:$/i.test(target.protocol)) {
+    throw new Error("Forward proxy Node.js hanya mendukung target HTTP/HTTPS.");
+  }
+
+  let HttpsProxyAgent = null;
   try {
-    undiciModule = await loadNodeUndiciModule();
+    HttpsProxyAgent = await loadHttpsProxyAgentClass();
   } catch (error) {
     const detail = error instanceof Error ? error.message : "unknown";
     throw new Error(
-      `Standard forward proxy membutuhkan dependency undici di runtime Node.js. Detail: ${detail}`,
+      `Standard forward proxy membutuhkan dependency https-proxy-agent di runtime Node.js. Detail: ${detail}`,
     );
   }
 
-  const ProxyAgent = undiciModule?.ProxyAgent;
-  const undiciFetch = undiciModule?.fetch;
-  if (typeof ProxyAgent !== "function") {
-    throw new Error(
-      "undici ProxyAgent tidak tersedia di runtime Node.js.",
-    );
-  }
+  const { httpModule, httpsModule } = await loadNodeHttpModules();
 
   let agent = NODE_PROXY_AGENT_CACHE.get(proxyUrl);
   if (!agent) {
-    agent = new ProxyAgent(proxyUrl);
+    agent = new HttpsProxyAgent(proxyUrl);
     NODE_PROXY_AGENT_CACHE.set(proxyUrl, agent);
   }
 
+  const bodyBuffer = await readNodeRequestBody(init?.body);
   const headers = new Headers(init?.headers || {});
-  headers.set("x-target-url", targetUrl);
+  if (bodyBuffer && !headers.has("content-length")) {
+    headers.set("content-length", String(bodyBuffer.byteLength));
+  }
 
-  const fetchFn = typeof undiciFetch === "function" ? undiciFetch : fetch;
-  return fetchFn(targetUrl, {
-    ...init,
-    headers,
-    dispatcher: agent,
+  const requestOptions = {
+    protocol: target.protocol,
+    hostname: target.hostname,
+    port: target.port || undefined,
+    method: String(init?.method || "GET").toUpperCase(),
+    path: `${target.pathname}${target.search}`,
+    headers: headersToNodeObject(headers),
+    agent,
+  };
+
+  const transport = target.protocol === "https:" ? httpsModule : httpModule;
+  const signal = init?.signal;
+
+  if (signal?.aborted) {
+    throw new Error("request aborted");
+  }
+
+  return await new Promise((resolve, reject) => {
+    let settled = false;
+    let request = null;
+
+    const cleanup = () => {
+      if (signal) {
+        signal.removeEventListener("abort", onAbort);
+      }
+    };
+
+    const finishResolve = (value) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      resolve(value);
+    };
+
+    const finishReject = (error) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+
+    const onAbort = () => {
+      if (request) {
+        request.destroy(new Error("request aborted"));
+      } else {
+        finishReject(new Error("request aborted"));
+      }
+    };
+
+    request = transport.request(requestOptions, (response) => {
+      const chunks = [];
+
+      response.on("data", (chunk) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+
+      response.on("end", () => {
+        const payload = chunks.length ? Buffer.concat(chunks) : Buffer.alloc(0);
+        const responseHeaders = responseHeadersFromNode(response.headers);
+
+        finishResolve(new Response(payload, {
+          status: response.statusCode || 502,
+          statusText: response.statusMessage || "",
+          headers: responseHeaders,
+        }));
+      });
+    });
+
+    request.on("error", finishReject);
+
+    if (signal) {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+
+    if (bodyBuffer && bodyBuffer.byteLength > 0) {
+      request.write(bodyBuffer);
+    }
+
+    request.end();
   });
 }
 
@@ -862,7 +1028,7 @@ async function postDataBrowserless(path, payload, context) {
     const detailLower = String(detail || "").toLowerCase();
     if (detailLower.includes("<!doctype html") || detailLower.includes("<html")) {
       if (detailLower.includes("squid") || detailLower.includes("err_invalid_url")) {
-        detail = "Proxy returned Squid HTML error (ERR_INVALID_URL). Untuk proxy host:port gunakan backend Node.js + undici, atau pakai proxy template URL (?url={url}).";
+        detail = "Proxy returned Squid HTML error (ERR_INVALID_URL). Untuk proxy host:port gunakan backend Node.js (forward proxy), atau pakai proxy template URL (?url={url}).";
       } else {
         detail = "Upstream returned HTML error page instead of JSON.";
       }
@@ -996,7 +1162,7 @@ function isRetryableAttemptError(message) {
     text.includes("2 free accounts per ip address") ||
     text.includes("otp verify failed") ||
     text.includes("standard forward proxy membutuhkan runtime node.js") ||
-    text.includes("standard forward proxy membutuhkan dependency undici") ||
+    text.includes("standard forward proxy membutuhkan dependency https-proxy-agent") ||
     text.includes("proxyagent") ||
     text.includes("err_invalid_url") ||
     text.includes("squid") ||

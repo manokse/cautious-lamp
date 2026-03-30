@@ -132,6 +132,7 @@ Catatan penting runtime proxy:
 
 - Proxy format host:port / user:pass@host:port (forward proxy standar) membutuhkan runtime Node.js.
 - Di project ini, dukungan itu aktif pada endpoint Vercel `api/generate.js` (runtime `nodejs`).
+- Implementasi forward proxy Node memakai `https-proxy-agent` + transport native `node:http`/`node:https`.
 - Untuk Cloudflare Workers/Pages Functions, gunakan format proxy template URL (contoh: `.../fetch?url={url}`), bukan forward proxy standar.
 - Jika runtime bukan Node.js, kandidat forward proxy akan otomatis di-skip agar tidak spam error berulang, lalu sistem lanjut ke kandidat proxy template/direct fallback.
 - UI melakukan pre-check capability backend untuk memberi status kompatibilitas. Jika runtime tidak support forward proxy host:port, kandidat tersebut akan di-skip otomatis; batch tetap lanjut menggunakan proxy template atau direct fallback.
@@ -155,7 +156,7 @@ Format yang didukung:
 
 Jika placeholder URL tidak disediakan, aplikasi akan mencoba menambahkan parameter target (`url`, `target`, `destination`, dll) secara otomatis.
 
-Jika Anda melihat error HTML dari Squid seperti `ERR_INVALID_URL`, berarti proxy yang dipakai adalah forward proxy standar tetapi runtime Anda tidak memakai transport Node proxy, atau format yang digunakan bukan template URL.
+Jika Anda melihat error HTML dari Squid seperti `ERR_INVALID_URL`, berarti proxy yang dipakai adalah forward proxy standar tetapi request tidak lewat endpoint Node.js (`api/generate.js`) atau format yang digunakan bukan template URL.
 
 ## Catatan keamanan
 
