@@ -1,0 +1,721 @@
+const DEFAULT_SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNjZGVpZ3p3ZHRzZHVienRja3dtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI5MzE1NDYsImV4cCI6MjA1ODUwNzU0Nn0.QixgX2_e_T1cfKXKsxVNMx9isiE3Y-DBkU5NPziyZek";
+
+const DEFAULT_DOMAINS = [
+  "ji-a.cc",
+  "waroengin.com",
+  "sumberakun.com",
+  "bosakun.com",
+  "otpku.com",
+];
+
+const SIGNUP_MUTATION = `
+mutation signup($user: signUpSession, $completedActionId: String, $promoCode: String, $referralCode: String, $frontendUrl: String) {
+  signupCloudUnits(
+    user: $user
+    completedActionId: $completedActionId
+    promoCode: $promoCode
+    referralCode: $referralCode
+    frontendUrl: $frontendUrl
+  ) {
+    authToken
+    paymentLink
+    __typename
+  }
+}
+`;
+
+const CHANGE_TOKEN_MUTATION = `
+mutation changeToken($token: String!) {
+  changeToken(token: $token) {
+    token
+    __typename
+  }
+}
+`;
+
+const GET_ACCOUNT_QUERY = `
+query getAccount($apiToken: String) {
+  account(apiToken: $apiToken) {
+    email
+    ownerEmail
+    apiKey
+    plan
+    maxConcurrent
+    maxQueued
+    __typename
+  }
+}
+`;
+
+function randomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function randomChoice(values) {
+  return values[randomInt(0, values.length - 1)];
+}
+
+function randomString(size) {
+  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let output = "";
+  for (let i = 0; i < size; i += 1) {
+    output += alphabet[randomInt(0, alphabet.length - 1)];
+  }
+  return output;
+}
+
+function randomApiToken() {
+  const alphabet = "abcdef0123456789";
+  let output = "";
+  for (let i = 0; i < 48; i += 1) {
+    output += alphabet[randomInt(0, alphabet.length - 1)];
+  }
+  return output;
+}
+
+function normalizeTokenInput(token) {
+  const normalized = String(token || "").trim().replace(/[^a-zA-Z0-9]/g, "");
+  if (normalized.length < 16) {
+    return "";
+  }
+
+  return normalized.slice(0, 64);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function pickFirstString(candidates) {
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate;
+    }
+  }
+
+  return "";
+}
+
+function parseDomainList(text) {
+  const domains = [];
+  const lines = text.split(/\r?\n/);
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#") || !line.includes(".")) {
+      continue;
+    }
+
+    if (line.includes(". ")) {
+      const domain = line.split(". ", 2)[1].trim();
+      if (domain.includes(".")) {
+        domains.push(domain);
+      }
+      continue;
+    }
+
+    domains.push(line);
+  }
+
+  return [...new Set(domains)];
+}
+
+function stripTags(value) {
+  return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function extractInboxMeta(html) {
+  const fromMatch = html.match(/From:\s*<\/span>\s*<span>([^<]+)/i);
+  const toMatch = html.match(/To:\s*<\/span>\s*<span>([^<]+)/i);
+  const subjectHeader = html.match(/Subject:[\s\S]{0,240}?<h1[^>]*>([\s\S]*?)<\/h1>/i);
+  const subjectInline = html.match(/Subject:\s*<\/span>\s*<div[^>]*>([\s\S]*?)<\/div>/i);
+  const receivedMatch = html.match(/Received:\s*<\/span>\s*<span>([^<]+)/i);
+
+  return {
+    from: fromMatch ? stripTags(fromMatch[1]) : "",
+    to: toMatch ? stripTags(toMatch[1]) : "",
+    subject: subjectHeader
+      ? stripTags(subjectHeader[1])
+      : subjectInline
+        ? stripTags(subjectInline[1])
+        : "",
+    received: receivedMatch ? stripTags(receivedMatch[1]) : "",
+  };
+}
+
+function extractOtpFromInboxHtml(html) {
+  const patterns = [
+    /Please copy or use the code below[\s\S]{0,1200}?\b(\d{6})\b/i,
+    /\[Action required\]\s*Verify your email address[\s\S]{0,2500}?\b(\d{6})\b/i,
+    /Verify your email[\s\S]{0,1600}?font-size:\s*30px[\s\S]{0,160}?>(\s*\d{6}\s*)</i,
+    /The browserless\.io team[\s\S]{0,1000}?\b(\d{6})\b/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (match) {
+      const otp = (match[1] || "").replace(/\D/g, "");
+      if (otp.length === 6) {
+        return otp;
+      }
+    }
+  }
+
+  const verifyBlock = html.match(/Verify your email[\s\S]{0,3000}/i);
+  if (verifyBlock) {
+    const codeMatch = verifyBlock[0].match(/\b(\d{6})\b/);
+    if (codeMatch) {
+      return codeMatch[1];
+    }
+  }
+
+  const allCodes = [...html.matchAll(/\b(\d{6})\b/g)].map((item) => item[1]);
+  return allCodes.length ? allCodes[0] : null;
+}
+
+function normalizeProfile(profile) {
+  const fullName = String(profile.fullName || "").trim() || `User ${randomString(6)}`;
+  const company = String(profile.company || "").trim();
+  const projectType = String(profile.projectType || "newProject").trim() || "newProject";
+  const useCases = Array.isArray(profile.useCases) && profile.useCases.length
+    ? profile.useCases.map((value) => String(value)).filter(Boolean)
+    : [String(profile.useCase || "scraping")];
+
+  return {
+    fullName,
+    company,
+    projectType,
+    useCases,
+    attribution: String(profile.attribution || "manualGenerator"),
+    plan: String(profile.plan || "free"),
+    frontendUrl: String(profile.frontendUrl || "https://www.browserless.io/signup/payment-completed"),
+    address: {
+      line1: String(profile.line1 || ""),
+      line2: String(profile.line2 || ""),
+      postalCode: String(profile.postalCode || ""),
+      country: String(profile.country || ""),
+      state: String(profile.state || ""),
+      city: String(profile.city || ""),
+      taxId: String(profile.taxId || ""),
+    },
+  };
+}
+
+async function readJsonSafe(response) {
+  const text = await response.text();
+  if (!text) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { rawText: text };
+  }
+}
+
+function buildProxyTarget(proxyUrl, targetUrl) {
+  if (!proxyUrl) {
+    return targetUrl;
+  }
+
+  if (proxyUrl.includes("{url}")) {
+    return proxyUrl.replace("{url}", encodeURIComponent(targetUrl));
+  }
+
+  const separator = proxyUrl.includes("?") ? "&" : "?";
+  return `${proxyUrl}${separator}url=${encodeURIComponent(targetUrl)}`;
+}
+
+async function requestWithProxy(targetUrl, init, options) {
+  const useProxy = options?.proxyEnabled && options?.proxyUrl;
+  if (!useProxy) {
+    return fetch(targetUrl, init);
+  }
+
+  const proxyTarget = buildProxyTarget(String(options.proxyUrl), targetUrl);
+  const headers = new Headers(init?.headers || {});
+  headers.set("x-target-url", targetUrl);
+
+  return fetch(proxyTarget, {
+    ...init,
+    headers,
+  });
+}
+
+async function loadDomains(requestUrl, proxyOptions) {
+  try {
+    const url = new URL(requestUrl);
+    const domainTxtUrl = `${url.origin}/domain.txt`;
+    const response = await requestWithProxy(
+      domainTxtUrl,
+      {
+        method: "GET",
+        cache: "no-store",
+      },
+      proxyOptions,
+    );
+
+    if (!response.ok) {
+      return DEFAULT_DOMAINS;
+    }
+
+    const text = await response.text();
+    const domains = parseDomainList(text);
+    return domains.length ? domains : DEFAULT_DOMAINS;
+  } catch {
+    return DEFAULT_DOMAINS;
+  }
+}
+
+function buildCookieHeader(user, domain, email) {
+  const surl = encodeURIComponent(`${domain}/${user}`);
+  const embx = encodeURIComponent(`["${email}"]`);
+  return `surl=${surl}; embx=${embx}`;
+}
+
+async function setupEmailfakeMailbox(mailbox, proxyOptions) {
+  const cookieHeader = buildCookieHeader(mailbox.user, mailbox.domain, mailbox.email);
+  const body = new URLSearchParams({
+    usr: mailbox.user,
+    dmn: mailbox.domain,
+  });
+
+  const response = await requestWithProxy(
+    "https://emailfake.com/check_adres_validation3.php",
+    {
+      method: "POST",
+      headers: {
+        "accept": "application/json, text/javascript, */*; q=0.01",
+        "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "x-requested-with": "XMLHttpRequest",
+        "origin": "https://emailfake.com",
+        "referer": `https://emailfake.com/${mailbox.domain}/${mailbox.user}`,
+        "cookie": cookieHeader,
+      },
+      body: body.toString(),
+    },
+    proxyOptions,
+  );
+
+  if (!response.ok) {
+    throw new Error(`emailfake setup failed: ${response.status}`);
+  }
+
+  const setupData = await readJsonSafe(response);
+  return {
+    cookieHeader,
+    setupStatus: setupData?.status || "unknown",
+  };
+}
+
+async function fetchEmailfakeInboxHtml(mailbox, cookieHeader, channelId, proxyOptions) {
+  const response = await requestWithProxy(
+    `https://emailfake.com/channel${channelId}/`,
+    {
+      method: "GET",
+      headers: {
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "referer": "https://emailfake.com/",
+        "cookie": cookieHeader,
+      },
+    },
+    proxyOptions,
+  );
+
+  if (!response.ok) {
+    throw new Error(`emailfake inbox request failed: ${response.status}`);
+  }
+
+  return response.text();
+}
+
+async function pollOtpFromEmailfake(mailbox, cookieHeader, maxWaitSeconds, proxyOptions, operationLog) {
+  const intervalSeconds = 5;
+  const attempts = Math.max(1, Math.ceil(maxWaitSeconds / intervalSeconds));
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const channelId = randomInt(1, 8);
+
+    try {
+      const inboxHtml = await fetchEmailfakeInboxHtml(mailbox, cookieHeader, channelId, proxyOptions);
+      const inboxMeta = extractInboxMeta(inboxHtml);
+      const otpCode = extractOtpFromInboxHtml(inboxHtml);
+
+      operationLog.push(
+        `[${nowIso()}] poll ${attempt}/${attempts} channel=${channelId} otp=${otpCode ? "found" : "none"}`,
+      );
+
+      if (otpCode) {
+        return {
+          otpCode,
+          channelId,
+          inboxMeta,
+        };
+      }
+    } catch (error) {
+      operationLog.push(
+        `[${nowIso()}] poll ${attempt}/${attempts} failed: ${error instanceof Error ? error.message : "unknown"}`,
+      );
+    }
+
+    if (attempt < attempts) {
+      await sleep(intervalSeconds * 1000);
+    }
+  }
+
+  return {
+    otpCode: null,
+    channelId: null,
+    inboxMeta: {
+      from: "",
+      to: mailbox.email,
+      subject: "",
+      received: "",
+    },
+  };
+}
+
+async function postDataBrowserless(path, payload, context) {
+  const anonKey = context.anonKey || DEFAULT_SUPABASE_ANON_KEY;
+  const headers = {
+    "accept": "*/*",
+    "content-type": "application/json;charset=UTF-8",
+    "apikey": anonKey,
+    "authorization": `Bearer ${anonKey}`,
+    "origin": "https://www.browserless.io",
+    "referer": "https://www.browserless.io/",
+    "x-client-info": "supabase-js-web/2.100.0",
+    "x-supabase-api-version": "2024-01-01",
+  };
+
+  const response = await requestWithProxy(
+    `https://data.browserless.io${path}`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+    },
+    context.proxy,
+  );
+
+  const data = await readJsonSafe(response);
+  if (!response.ok) {
+    throw new Error(`data.browserless.io ${path} failed: ${response.status}`);
+  }
+
+  return data;
+}
+
+async function postGraphql(operationName, query, variables, context) {
+  const headers = {
+    "accept": "*/*",
+    "content-type": "application/json",
+    "origin": "https://www.browserless.io",
+    "referer": "https://www.browserless.io/",
+  };
+
+  if (context.accessToken) {
+    headers.authorization = `Bearer ${context.accessToken}`;
+  }
+
+  const response = await requestWithProxy(
+    "https://api.browserless.io/graphql",
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        operationName,
+        query,
+        variables,
+      }),
+    },
+    context.proxy,
+  );
+
+  const body = await readJsonSafe(response);
+
+  if (!response.ok) {
+    throw new Error(`api.browserless.io/graphql failed: ${response.status}`);
+  }
+
+  if (body?.errors?.length) {
+    throw new Error(`GraphQL ${operationName} error: ${body.errors[0].message || "unknown"}`);
+  }
+
+  return body;
+}
+
+export async function generateBrowserlessAccount(options = {}) {
+  const proxyOptions = {
+    proxyEnabled: Boolean(options.proxyEnabled),
+    proxyUrl: String(options.proxyUrl || "").trim(),
+  };
+
+  const maxOtpWaitSeconds = Math.max(
+    15,
+    Math.min(180, Number.parseInt(String(options.maxOtpWaitSeconds || 60), 10) || 60),
+  );
+
+  const operationLog = [];
+  const requestUrl = String(options.requestUrl || "https://localhost");
+  const domains = await loadDomains(requestUrl, proxyOptions);
+  const profile = normalizeProfile(options.profile || {});
+
+  const user = randomString(10);
+  const domain = randomChoice(domains);
+  const email = `${user}@${domain}`;
+
+  const mailbox = {
+    user,
+    domain,
+    email,
+  };
+
+  operationLog.push(`[${nowIso()}] mailbox prepared: ${email}`);
+
+  const setupResult = await setupEmailfakeMailbox(mailbox, proxyOptions);
+  operationLog.push(`[${nowIso()}] emailfake setup status: ${setupResult.setupStatus}`);
+
+  await postDataBrowserless(
+    "/auth/v1/otp",
+    {
+      email,
+      data: {},
+      create_user: true,
+      gotrue_meta_security: {},
+      code_challenge: null,
+      code_challenge_method: null,
+    },
+    {
+      anonKey: options.anonKey,
+      proxy: proxyOptions,
+    },
+  );
+  operationLog.push(`[${nowIso()}] otp requested`);
+
+  const otpResult = await pollOtpFromEmailfake(
+    mailbox,
+    setupResult.cookieHeader,
+    maxOtpWaitSeconds,
+    proxyOptions,
+    operationLog,
+  );
+
+  if (!otpResult.otpCode) {
+    throw new Error("OTP not found in emailfake inbox within timeout");
+  }
+
+  const verifyData = await postDataBrowserless(
+    "/auth/v1/verify",
+    {
+      email,
+      token: otpResult.otpCode,
+      type: "email",
+      gotrue_meta_security: {},
+    },
+    {
+      anonKey: options.anonKey,
+      proxy: proxyOptions,
+    },
+  );
+  operationLog.push(`[${nowIso()}] otp verified`);
+
+  let accessToken = pickFirstString([
+    verifyData?.access_token,
+    verifyData?.session?.access_token,
+  ]);
+  let refreshToken = pickFirstString([
+    verifyData?.refresh_token,
+    verifyData?.session?.refresh_token,
+  ]);
+
+  let refreshedSession = {};
+  if (refreshToken) {
+    refreshedSession = await postDataBrowserless(
+      "/auth/v1/token?grant_type=refresh_token",
+      {
+        refresh_token: refreshToken,
+      },
+      {
+        anonKey: options.anonKey,
+        proxy: proxyOptions,
+      },
+    );
+
+    accessToken = pickFirstString([
+      accessToken,
+      refreshedSession?.access_token,
+      refreshedSession?.session?.access_token,
+    ]);
+    refreshToken = pickFirstString([
+      refreshedSession?.refresh_token,
+      refreshedSession?.session?.refresh_token,
+      refreshToken,
+    ]);
+
+    operationLog.push(`[${nowIso()}] refresh token exchange completed`);
+  }
+
+  const oauthUserId = pickFirstString([
+    verifyData?.user?.id,
+    refreshedSession?.user?.id,
+    crypto.randomUUID(),
+  ]);
+
+  const desiredToken = normalizeTokenInput(options.preferredToken) || randomApiToken();
+
+  const signupVariables = {
+    user: {
+      fullName: profile.fullName,
+      company: profile.company,
+      attribution: profile.attribution,
+      email,
+      oauthUserId,
+      plan: profile.plan,
+      projectType: profile.projectType,
+      useCases: profile.useCases,
+      address: {
+        ...profile.address,
+      },
+    },
+    frontendUrl: profile.frontendUrl,
+  };
+
+  const signupResult = await postGraphql(
+    "signup",
+    SIGNUP_MUTATION,
+    signupVariables,
+    {
+      proxy: proxyOptions,
+      accessToken,
+    },
+  );
+  operationLog.push(`[${nowIso()}] signup mutation completed`);
+
+  let changeTokenResult = {};
+  try {
+    changeTokenResult = await postGraphql(
+      "changeToken",
+      CHANGE_TOKEN_MUTATION,
+      {
+        token: desiredToken,
+      },
+      {
+        proxy: proxyOptions,
+        accessToken,
+      },
+    );
+    operationLog.push(`[${nowIso()}] changeToken mutation completed`);
+  } catch (error) {
+    operationLog.push(
+      `[${nowIso()}] changeToken skipped/failed: ${error instanceof Error ? error.message : "unknown"}`,
+    );
+  }
+
+  let accountResult = {};
+  try {
+    accountResult = await postGraphql(
+      "getAccount",
+      GET_ACCOUNT_QUERY,
+      {},
+      {
+        proxy: proxyOptions,
+        accessToken,
+      },
+    );
+    operationLog.push(`[${nowIso()}] getAccount with session completed`);
+  } catch (error) {
+    operationLog.push(
+      `[${nowIso()}] getAccount session failed: ${error instanceof Error ? error.message : "unknown"}`,
+    );
+  }
+
+  const signupAuthToken = pickFirstString([
+    signupResult?.data?.signupCloudUnits?.authToken,
+  ]);
+
+  if (!accountResult?.data?.account && signupAuthToken) {
+    try {
+      accountResult = await postGraphql(
+        "getAccount",
+        GET_ACCOUNT_QUERY,
+        {
+          apiToken: signupAuthToken,
+        },
+        {
+          proxy: proxyOptions,
+          accessToken: "",
+        },
+      );
+      operationLog.push(`[${nowIso()}] getAccount with apiToken completed`);
+    } catch (error) {
+      operationLog.push(
+        `[${nowIso()}] getAccount apiToken failed: ${error instanceof Error ? error.message : "unknown"}`,
+      );
+    }
+  }
+
+  const apiKey = pickFirstString([
+    accountResult?.data?.account?.apiKey,
+    changeTokenResult?.data?.changeToken?.token,
+    signupAuthToken,
+    desiredToken,
+  ]);
+
+  return {
+    generatedAt: nowIso(),
+    proxyUsed: Boolean(proxyOptions.proxyEnabled && proxyOptions.proxyUrl),
+    email,
+    user,
+    domain,
+    otpCode: otpResult.otpCode,
+    inboxMeta: otpResult.inboxMeta,
+    channelId: otpResult.channelId,
+    apiKey,
+    refreshToken,
+    profileUsed: {
+      ...profile,
+    },
+    payloads: {
+      otp: {
+        email,
+        data: {},
+        create_user: true,
+        gotrue_meta_security: {},
+        code_challenge: null,
+        code_challenge_method: null,
+      },
+      verify: {
+        email,
+        token: otpResult.otpCode,
+        type: "email",
+        gotrue_meta_security: {},
+      },
+      refresh: refreshToken
+        ? {
+            refresh_token: refreshToken,
+          }
+        : null,
+      signup: {
+        operationName: "signup",
+        variables: signupVariables,
+      },
+      changeToken: {
+        operationName: "changeToken",
+        variables: {
+          token: desiredToken,
+        },
+      },
+      getAccount: {
+        operationName: "getAccount",
+      },
+    },
+    operationLog,
+  };
+}
