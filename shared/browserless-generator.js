@@ -1139,20 +1139,21 @@ function buildProxyCandidates(options) {
   }
 
   if (!proxyEnabled) {
-    return [{ proxyEnabled: false, proxyUrl: "", label: "direct" }];
+    return [{ proxyEnabled: false, proxyUrl: "", label: "direct", requestTimeoutMs: options.requestTimeoutMs }];
   }
 
   if (!merged.length) {
-    return [{ proxyEnabled: false, proxyUrl: "", label: "direct" }];
+    return [{ proxyEnabled: false, proxyUrl: "", label: "direct", requestTimeoutMs: options.requestTimeoutMs }];
   }
 
   const candidates = merged.map((proxyUrl) => ({
     proxyEnabled: true,
     proxyUrl,
     label: proxyUrl,
+    requestTimeoutMs: options.requestTimeoutMs,
   }));
 
-  candidates.push({ proxyEnabled: false, proxyUrl: "", label: "direct-fallback" });
+  candidates.push({ proxyEnabled: false, proxyUrl: "", label: "direct-fallback", requestTimeoutMs: options.requestTimeoutMs });
   return candidates;
 }
 
@@ -1180,8 +1181,8 @@ function isRetryableAttemptError(message) {
 }
 
 async function generateBrowserlessAccountSingle(options = {}, proxyOptions, proxyMeta) {
-  const effectiveProxy = proxyOptions || { proxyEnabled: false, proxyUrl: "" };
-  const emailfakeProxy = { proxyEnabled: false, proxyUrl: "" };
+  const effectiveProxy = proxyOptions || { proxyEnabled: false, proxyUrl: "", requestTimeoutMs: options?.requestTimeoutMs };
+  const emailfakeProxy = { proxyEnabled: false, proxyUrl: "", requestTimeoutMs: options?.requestTimeoutMs };
   const effectiveMeta = proxyMeta || { attempt: 1, total: 1, label: "direct" };
 
   const maxOtpWaitSeconds = Math.max(
@@ -1196,7 +1197,7 @@ async function generateBrowserlessAccountSingle(options = {}, proxyOptions, prox
   operationLog.push(`[${nowIso()}] emailfake transport: direct (proxy bypass enabled)`);
 
   const requestUrl = String(options.requestUrl || "https://localhost");
-  const domains = await loadDomains(requestUrl, { proxyEnabled: false, proxyUrl: "" });
+  const domains = await loadDomains(requestUrl, { proxyEnabled: false, proxyUrl: "", requestTimeoutMs: options?.requestTimeoutMs });
   const profile = normalizeProfile(options.profile || {});
 
   const user = randomString(10);
