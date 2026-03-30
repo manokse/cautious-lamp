@@ -67,6 +67,26 @@ Cloudflare akan memakai file functions/api/generate.js sebagai endpoint serverle
 
 File _routes.json sudah disiapkan agar path /api/* diarahkan ke Functions.
 
+## Deploy Cloudflare Workers (workers.dev)
+
+Jika Anda deploy ke domain *.workers.dev (bukan *.pages.dev), gunakan runtime Worker ini:
+
+- worker.js
+- wrangler.toml
+
+Langkah cepat:
+
+1. Pastikan Worker memakai `worker.js` sebagai entrypoint.
+2. Pastikan static assets binding aktif (`ASSETS`) sesuai wrangler.toml.
+3. Set environment variable `BROWSERLESS_SUPABASE_ANON_KEY` di Worker settings (opsional, fallback sudah ada di kode).
+4. Deploy ulang.
+
+Setelah deploy, cek health endpoint:
+
+- GET /api/generate
+
+Jika aktif, response akan berisi `ok: true`.
+
 Opsional environment variable:
 
 - BROWSERLESS_SUPABASE_ANON_KEY
@@ -93,3 +113,13 @@ Jika UI menampilkan HTTP 405 pada Start Generate:
 - Pastikan project dijalankan di runtime serverless (Vercel/Cloudflare), bukan static server biasa.
 - Cek endpoint health dengan membuka /api/generate di browser. Jika aktif, akan muncul JSON ok true.
 - Re-deploy setelah update terbaru karena frontend sekarang mencoba fallback /api/generate dan /api/generate/.
+
+## Troubleshooting HTTP 404 di workers.dev
+
+Jika di workers.dev muncul:
+
+- `/api/generate -> HTTP 404`
+
+Berarti Worker Anda masih mode static-only tanpa route API. Solusi:
+
+- Deploy dengan `worker.js` (runtime Worker), bukan hanya upload aset statis.
