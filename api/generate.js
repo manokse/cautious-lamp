@@ -1,7 +1,7 @@
 import { generateBrowserlessAccount } from "../shared/browserless-generator.js";
 
 export const config = {
-  runtime: "edge",
+  runtime: "nodejs",
 };
 
 function jsonResponse(payload, status = 200) {

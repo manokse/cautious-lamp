@@ -48,6 +48,9 @@ query getAccount($authToken: String) {
 }
 `;
 
+const NODE_PROXY_AGENT_CACHE = new Map();
+let NODE_UNDICI_PROMISE = null;
+
 function randomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
@@ -379,6 +382,94 @@ function normalizeProxyEndpointInput(proxyUrlRaw) {
   return raw;
 }
 
+function isNodeRuntime() {
+  return typeof process !== "undefined" && Boolean(process?.versions?.node);
+}
+
+function hasProxyTemplateTokens(value) {
+  const text = String(value || "");
+  return /\{\{?url\}?\}|\{\{?target\}?\}|\{\{?raw_url\}?\}|\{\{?base64_url\}?\}|\{\{?url_b64\}?\}|%url%|\$URL/i.test(text);
+}
+
+function isLikelyForwardProxyUrl(proxyUrl) {
+  try {
+    const parsed = new URL(proxyUrl);
+    if (!/^https?:$/i.test(parsed.protocol)) {
+      return false;
+    }
+
+    if (hasProxyTemplateTokens(proxyUrl)) {
+      return false;
+    }
+
+    const path = parsed.pathname || "/";
+    const hasPath = path && path !== "/";
+    if (hasPath) {
+      return false;
+    }
+
+    const knownGatewayParams = ["url", "target", "destination", "dest", "u", "endpoint"];
+    if (knownGatewayParams.some((key) => parsed.searchParams.has(key))) {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function loadNodeUndiciModule() {
+  if (NODE_UNDICI_PROMISE) {
+    return NODE_UNDICI_PROMISE;
+  }
+
+  const dynamicImport = new Function("moduleName", "return import(moduleName)");
+  NODE_UNDICI_PROMISE = dynamicImport("undici");
+  return NODE_UNDICI_PROMISE;
+}
+
+async function fetchWithNodeForwardProxy(targetUrl, init, proxyUrl) {
+  if (!isNodeRuntime()) {
+    throw new Error(
+      "Standard forward proxy membutuhkan runtime Node.js. Untuk Edge/Workers gunakan proxy template URL (contoh: ...?url={url}).",
+    );
+  }
+
+  let undiciModule = null;
+  try {
+    undiciModule = await loadNodeUndiciModule();
+  } catch {
+    throw new Error(
+      "Standard forward proxy membutuhkan dependency undici di runtime Node.js.",
+    );
+  }
+
+  const ProxyAgent = undiciModule?.ProxyAgent;
+  const undiciFetch = undiciModule?.fetch;
+  if (typeof ProxyAgent !== "function") {
+    throw new Error(
+      "undici ProxyAgent tidak tersedia di runtime Node.js.",
+    );
+  }
+
+  let agent = NODE_PROXY_AGENT_CACHE.get(proxyUrl);
+  if (!agent) {
+    agent = new ProxyAgent(proxyUrl);
+    NODE_PROXY_AGENT_CACHE.set(proxyUrl, agent);
+  }
+
+  const headers = new Headers(init?.headers || {});
+  headers.set("x-target-url", targetUrl);
+
+  const fetchFn = typeof undiciFetch === "function" ? undiciFetch : fetch;
+  return fetchFn(targetUrl, {
+    ...init,
+    headers,
+    dispatcher: agent,
+  });
+}
+
 function applyProxyTemplate(proxyUrl, targetUrl) {
   const encoded = encodeURIComponent(targetUrl);
   const base64 = toBase64(targetUrl);
@@ -459,11 +550,17 @@ async function requestWithProxy(targetUrl, init, options) {
     return fetch(targetUrl, init);
   }
 
-  const proxyTarget = buildProxyTarget(String(options.proxyUrl), targetUrl);
+  const normalizedProxyUrl = normalizeProxyEndpointInput(String(options.proxyUrl));
+
+  if (isLikelyForwardProxyUrl(normalizedProxyUrl)) {
+    return fetchWithNodeForwardProxy(targetUrl, init, normalizedProxyUrl);
+  }
+
+  const proxyTarget = buildProxyTarget(normalizedProxyUrl, targetUrl);
   const headers = new Headers(init?.headers || {});
   headers.set("x-target-url", targetUrl);
 
-  const proxyAuth = buildProxyAuthorizationHeader(String(options.proxyUrl));
+  const proxyAuth = buildProxyAuthorizationHeader(normalizedProxyUrl);
   if (proxyAuth && !headers.has("proxy-authorization")) {
     headers.set("proxy-authorization", proxyAuth);
   }
@@ -665,13 +762,22 @@ async function postDataBrowserless(path, payload, context) {
 
   const data = await readJsonSafe(response);
   if (!response.ok) {
-    const detail = pickFirstString([
+    let detail = pickFirstString([
       data?.error_description,
       data?.message,
       data?.error,
       data?.msg,
       data?.rawText,
     ]);
+
+    const detailLower = String(detail || "").toLowerCase();
+    if (detailLower.includes("<!doctype html") || detailLower.includes("<html")) {
+      if (detailLower.includes("squid") || detailLower.includes("err_invalid_url")) {
+        detail = "Proxy returned Squid HTML error (ERR_INVALID_URL). Untuk proxy host:port gunakan backend Node.js + undici, atau pakai proxy template URL (?url={url}).";
+      } else {
+        detail = "Upstream returned HTML error page instead of JSON.";
+      }
+    }
 
     const suffix = detail ? ` (${String(detail).slice(0, 180)})` : "";
     throw new Error(`data.browserless.io ${path} failed: ${response.status}${suffix}`);
@@ -786,6 +892,12 @@ function isRetryableAttemptError(message) {
   return (
     text.includes("2 free accounts per ip address") ||
     text.includes("otp verify failed") ||
+    text.includes("standard forward proxy membutuhkan runtime node.js") ||
+    text.includes("standard forward proxy membutuhkan dependency undici") ||
+    text.includes("proxyagent") ||
+    text.includes("err_invalid_url") ||
+    text.includes("squid") ||
+    (text.includes("/auth/v1/otp failed: 400") && text.includes("doctype html")) ||
     text.includes("failed: 403") ||
     text.includes("failed: 429") ||
     text.includes("failed: 500") ||

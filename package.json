@@ -1,0 +1,8 @@
+{
+  "name": "browserless-auto-generator",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "undici": "^6.21.0"
+  }
+}

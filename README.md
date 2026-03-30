@@ -35,6 +35,12 @@ Fitur utama:
 
 ## Cara jalan lokal
 
+Install dependency terlebih dahulu:
+
+```bash
+npm install
+```
+
 Jalankan static server:
 
 ```bash
@@ -106,6 +112,12 @@ Mode proxy aktif bila toggle proxy dinyalakan dan Proxy URL diisi.
 
 Khusus emailfake.com: request setup inbox dan polling OTP selalu direct (tanpa proxy), meskipun mode proxy aktif. Proxy hanya dipakai untuk request ke endpoint Browserless.
 
+Catatan penting runtime proxy:
+
+- Proxy format host:port / user:pass@host:port (forward proxy standar) membutuhkan runtime Node.js.
+- Di project ini, dukungan itu aktif pada endpoint Vercel `api/generate.js` (runtime `nodejs`).
+- Untuk Cloudflare Workers/Pages Functions, gunakan format proxy template URL (contoh: `.../fetch?url={url}`), bukan forward proxy standar.
+
 Anda juga bisa isi `Proxy Pool` (satu proxy per baris). Sistem akan mencoba proxy satu per satu jika attempt sebelumnya gagal.
 
 Format yang didukung:
@@ -118,6 +130,8 @@ Format yang didukung:
 - {"host":"1.2.3.4","port":8080,"username":"u","password":"p"}
 
 Jika placeholder URL tidak disediakan, aplikasi akan mencoba menambahkan parameter target (`url`, `target`, `destination`, dll) secara otomatis.
+
+Jika Anda melihat error HTML dari Squid seperti `ERR_INVALID_URL`, berarti proxy yang dipakai adalah forward proxy standar tetapi runtime Anda tidak memakai transport Node proxy, atau format yang digunakan bukan template URL.
 
 ## Catatan keamanan
 
