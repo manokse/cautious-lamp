@@ -148,34 +148,102 @@ function extractInboxMeta(html) {
   };
 }
 
-function extractOtpFromInboxHtml(html) {
+function pushUniqueOtp(candidates, code, reason) {
+  const normalized = String(code || "").replace(/\D/g, "");
+  if (normalized.length !== 6) {
+    return;
+  }
+
+  if (candidates.some((item) => item.code === normalized)) {
+    return;
+  }
+
+  candidates.push({
+    code: normalized,
+    reason,
+  });
+}
+
+function extractOtpCandidatesFromInboxHtml(html) {
+  const candidates = [];
   const patterns = [
-    /Please copy or use the code below[\s\S]{0,1200}?\b(\d{6})\b/i,
-    /\[Action required\]\s*Verify your email address[\s\S]{0,2500}?\b(\d{6})\b/i,
-    /Verify your email[\s\S]{0,1600}?font-size:\s*30px[\s\S]{0,160}?>(\s*\d{6}\s*)</i,
-    /The browserless\.io team[\s\S]{0,1000}?\b(\d{6})\b/i,
+    {
+      reason: "copy_code_block",
+      pattern: /Please copy or use the code below[\s\S]{0,1400}?\b(\d{6})\b/i,
+    },
+    {
+      reason: "action_required",
+      pattern: /\[Action required\]\s*Verify your email address[\s\S]{0,2800}?\b(\d{6})\b/i,
+    },
+    {
+      reason: "monospace_code",
+      pattern: /font-family:\s*monospace[\s\S]{0,260}?>\s*(\d{6})\s*<\/div>/i,
+    },
+    {
+      reason: "verify_block",
+      pattern: /Verify your email[\s\S]{0,2400}?\b(\d{6})\b/i,
+    },
   ];
 
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
+  for (const item of patterns) {
+    const match = html.match(item.pattern);
     if (match) {
-      const otp = (match[1] || "").replace(/\D/g, "");
-      if (otp.length === 6) {
-        return otp;
-      }
+      pushUniqueOtp(candidates, match[1], item.reason);
     }
   }
 
-  const verifyBlock = html.match(/Verify your email[\s\S]{0,3000}/i);
-  if (verifyBlock) {
-    const codeMatch = verifyBlock[0].match(/\b(\d{6})\b/);
-    if (codeMatch) {
-      return codeMatch[1];
+  // Conservative fallback: only inspect the local "verify your email" section, never full-page numbers.
+  const verifySection = html.match(/Verify your email[\s\S]{0,3200}/i);
+  if (verifySection) {
+    const sectionCodes = [...verifySection[0].matchAll(/\b(\d{6})\b/g)].map((item) => item[1]);
+    for (const code of sectionCodes) {
+      pushUniqueOtp(candidates, code, "verify_section_scan");
     }
   }
 
-  const allCodes = [...html.matchAll(/\b(\d{6})\b/g)].map((item) => item[1]);
-  return allCodes.length ? allCodes[0] : null;
+  return candidates;
+}
+
+function extractOtpFromInboxHtml(html) {
+  const candidates = extractOtpCandidatesFromInboxHtml(html);
+  return candidates.length ? candidates[0].code : null;
+}
+
+function scoreOtpCandidate(candidate) {
+  const from = String(candidate?.inboxMeta?.from || "").toLowerCase();
+  const subject = String(candidate?.inboxMeta?.subject || "").toLowerCase();
+  const reason = String(candidate?.reason || "");
+
+  let score = 0;
+  if (from.includes("browserless.io")) {
+    score += 6;
+  }
+
+  if (subject.includes("verify your email")) {
+    score += 6;
+  }
+
+  if (subject.includes("action required")) {
+    score += 2;
+  }
+
+  if (reason === "copy_code_block") {
+    score += 5;
+  }
+
+  if (reason === "monospace_code") {
+    score += 4;
+  }
+
+  if (reason === "action_required") {
+    score += 3;
+  }
+
+  if (reason === "verify_block") {
+    score += 2;
+  }
+
+  return score;
 }
 
 function normalizeProfile(profile) {
@@ -340,28 +408,43 @@ async function pollOtpFromEmailfake(mailbox, cookieHeader, maxWaitSeconds, proxy
   const attempts = Math.max(1, Math.ceil(maxWaitSeconds / intervalSeconds));
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    const channelId = randomInt(1, 8);
+    const discovered = [];
 
-    try {
-      const inboxHtml = await fetchEmailfakeInboxHtml(mailbox, cookieHeader, channelId, proxyOptions);
-      const inboxMeta = extractInboxMeta(inboxHtml);
-      const otpCode = extractOtpFromInboxHtml(inboxHtml);
+    for (let channelId = 1; channelId <= 8; channelId += 1) {
+      try {
+        const inboxHtml = await fetchEmailfakeInboxHtml(mailbox, cookieHeader, channelId, proxyOptions);
+        const inboxMeta = extractInboxMeta(inboxHtml);
+        const otpCandidates = extractOtpCandidatesFromInboxHtml(inboxHtml);
 
-      operationLog.push(
-        `[${nowIso()}] poll ${attempt}/${attempts} channel=${channelId} otp=${otpCode ? "found" : "none"}`,
-      );
+        operationLog.push(
+          `[${nowIso()}] poll ${attempt}/${attempts} channel=${channelId} candidates=${otpCandidates.length}`,
+        );
 
-      if (otpCode) {
-        return {
-          otpCode,
-          channelId,
-          inboxMeta,
-        };
+        for (const otpCandidate of otpCandidates) {
+          discovered.push({
+            code: otpCandidate.code,
+            reason: otpCandidate.reason,
+            channelId,
+            inboxMeta,
+          });
+        }
+      } catch (error) {
+        operationLog.push(
+          `[${nowIso()}] poll ${attempt}/${attempts} channel=${channelId} failed: ${error instanceof Error ? error.message : "unknown"}`,
+        );
       }
-    } catch (error) {
-      operationLog.push(
-        `[${nowIso()}] poll ${attempt}/${attempts} failed: ${error instanceof Error ? error.message : "unknown"}`,
-      );
+    }
+
+    if (discovered.length) {
+      discovered.sort((a, b) => scoreOtpCandidate(b) - scoreOtpCandidate(a));
+      const best = discovered[0];
+
+      return {
+        otpCode: best.code,
+        channelId: best.channelId,
+        inboxMeta: best.inboxMeta,
+        otpCandidates: discovered,
+      };
     }
 
     if (attempt < attempts) {
@@ -372,6 +455,7 @@ async function pollOtpFromEmailfake(mailbox, cookieHeader, maxWaitSeconds, proxy
   return {
     otpCode: null,
     channelId: null,
+    otpCandidates: [],
     inboxMeta: {
       from: "",
       to: mailbox.email,
@@ -406,7 +490,16 @@ async function postDataBrowserless(path, payload, context) {
 
   const data = await readJsonSafe(response);
   if (!response.ok) {
-    throw new Error(`data.browserless.io ${path} failed: ${response.status}`);
+    const detail = pickFirstString([
+      data?.error_description,
+      data?.message,
+      data?.error,
+      data?.msg,
+      data?.rawText,
+    ]);
+
+    const suffix = detail ? ` (${String(detail).slice(0, 180)})` : "";
+    throw new Error(`data.browserless.io ${path} failed: ${response.status}${suffix}`);
   }
 
   return data;
@@ -511,20 +604,48 @@ export async function generateBrowserlessAccount(options = {}) {
     throw new Error("OTP not found in emailfake inbox within timeout");
   }
 
-  const verifyData = await postDataBrowserless(
-    "/auth/v1/verify",
-    {
-      email,
-      token: otpResult.otpCode,
-      type: "email",
-      gotrue_meta_security: {},
-    },
-    {
-      anonKey: options.anonKey,
-      proxy: proxyOptions,
-    },
-  );
-  operationLog.push(`[${nowIso()}] otp verified`);
+  const verifyCandidates = otpResult.otpCandidates?.length
+    ? otpResult.otpCandidates
+    : [{ code: otpResult.otpCode, reason: "single_candidate", channelId: otpResult.channelId, inboxMeta: otpResult.inboxMeta }];
+
+  let verifyData = null;
+  let verifiedOtpCode = "";
+
+  for (const candidate of verifyCandidates) {
+    try {
+      verifyData = await postDataBrowserless(
+        "/auth/v1/verify",
+        {
+          email,
+          token: candidate.code,
+          type: "email",
+          gotrue_meta_security: {},
+        },
+        {
+          anonKey: options.anonKey,
+          proxy: proxyOptions,
+        },
+      );
+
+      verifiedOtpCode = candidate.code;
+      operationLog.push(
+        `[${nowIso()}] otp verified using ${candidate.code} channel=${candidate.channelId || "?"} reason=${candidate.reason || "unknown"}`,
+      );
+      break;
+    } catch (error) {
+      operationLog.push(
+        `[${nowIso()}] otp verify failed for ${candidate.code}: ${error instanceof Error ? error.message : "unknown"}`,
+      );
+
+      if (!(error instanceof Error) || !error.message.includes("failed: 403")) {
+        throw error;
+      }
+    }
+  }
+
+  if (!verifyData || !verifiedOtpCode) {
+    throw new Error(`OTP verify failed after trying ${verifyCandidates.length} candidate(s)`);
+  }
 
   let accessToken = pickFirstString([
     verifyData?.access_token,
@@ -674,7 +795,7 @@ export async function generateBrowserlessAccount(options = {}) {
     email,
     user,
     domain,
-    otpCode: otpResult.otpCode,
+    otpCode: verifiedOtpCode,
     inboxMeta: otpResult.inboxMeta,
     channelId: otpResult.channelId,
     apiKey,
@@ -693,7 +814,7 @@ export async function generateBrowserlessAccount(options = {}) {
       },
       verify: {
         email,
-        token: otpResult.otpCode,
+        token: verifiedOtpCode,
         type: "email",
         gotrue_meta_security: {},
       },

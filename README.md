@@ -123,3 +123,18 @@ Jika di workers.dev muncul:
 Berarti Worker Anda masih mode static-only tanpa route API. Solusi:
 
 - Deploy dengan `worker.js` (runtime Worker), bukan hanya upload aset statis.
+
+## Troubleshooting verify 403
+
+Jika log menunjukkan:
+
+- `data.browserless.io /auth/v1/verify failed: 403`
+
+Itu biasanya berarti kode OTP yang terbaca tidak cocok / kadaluarsa, bukan masalah route API.
+
+Checklist:
+
+- Naikkan `OTP Timeout / akun` (misalnya 90-120 detik).
+- Jalankan batch kecil dulu (1-2 akun) untuk validasi.
+- Pastikan domain email di `domain.txt` masih valid di emailfake.
+- Redeploy agar parser OTP terbaru aktif (parser sekarang mencoba banyak kandidat OTP sebelum gagal).

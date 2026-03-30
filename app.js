@@ -169,19 +169,37 @@ async function callGenerateApi(payload) {
         `HTTP ${response.status}`;
 
       if ([404, 405, 501].includes(response.status)) {
-        failures.push(`${endpoint} -> ${errorMessage}`);
+        failures.push({
+          endpoint,
+          message: errorMessage,
+          kind: "route",
+        });
         continue;
       }
 
       throw new Error(errorMessage);
     } catch (error) {
-      failures.push(`${endpoint} -> ${error instanceof Error ? error.message : "unknown error"}`);
+      const message = error instanceof Error ? error.message : "unknown error";
+      const kind = /\b404\b|\b405\b|method not allowed|not found/i.test(message)
+        ? "route"
+        : "runtime";
+
+      failures.push({
+        endpoint,
+        message,
+        kind,
+      });
     }
   }
 
-  throw new Error(
-    `Backend /api belum aktif atau routing belum benar. Detail: ${failures.join(" | ")}`,
-  );
+  const detailText = failures.map((item) => `${item.endpoint} -> ${item.message}`).join(" | ");
+  const routeOnly = failures.length > 0 && failures.every((item) => item.kind === "route");
+
+  if (routeOnly) {
+    throw new Error(`Backend /api belum aktif atau routing belum benar. Detail: ${detailText}`);
+  }
+
+  throw new Error(`Generate gagal dari backend. Detail: ${detailText}`);
 }
 
 async function runBatchGeneration() {
