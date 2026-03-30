@@ -5,6 +5,7 @@ const ui = {
   executionMode: document.getElementById("executionMode"),
   workerCount: document.getElementById("workerCount"),
   otpWaitSeconds: document.getElementById("otpWaitSeconds"),
+  requestTimeoutMs: document.getElementById("requestTimeoutMs"),
   plan: document.getElementById("plan"),
   useCase: document.getElementById("useCase"),
   proxyEnabled: document.getElementById("proxyEnabled"),
@@ -603,6 +604,10 @@ function buildRunConfig() {
     15,
     Math.min(180, Number.parseInt(ui.otpWaitSeconds.value, 10) || 60),
   );
+  const requestTimeoutMs = Math.max(
+    5000,
+    Math.min(60000, Number.parseInt(ui.requestTimeoutMs.value, 10) || 15000),
+  );
   const executionMode = ui.executionMode.value === "async_pool" ? "async_pool" : "sequential";
   const workerCount = Math.max(1, Math.min(12, Number.parseInt(ui.workerCount.value, 10) || 1));
   const effectiveWorkers = executionMode === "async_pool" ? Math.min(workerCount, count) : 1;
@@ -618,6 +623,7 @@ function buildRunConfig() {
   return {
     count,
     maxOtpWaitSeconds,
+    requestTimeoutMs,
     executionMode,
     workerCount,
     effectiveWorkers,
@@ -635,6 +641,7 @@ async function processSingleItem(currentIndex, config) {
 
   const payload = {
     maxOtpWaitSeconds: config.maxOtpWaitSeconds,
+    requestTimeoutMs: config.requestTimeoutMs,
     proxyEnabled: config.proxyEnabled,
     proxyUrl: config.proxyUrl,
     proxyUrls: config.proxyUrls,
