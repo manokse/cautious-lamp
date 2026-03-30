@@ -74,6 +74,16 @@
               disabled
             />
           </label>
+
+          <label class="span-2">
+            Proxy Pool (opsional, satu proxy per baris)
+            <textarea
+              id="proxyPool"
+              rows="4"
+              placeholder="https://proxy1.example/fetch?url={url}\nhttps://proxy2.example/fetch?url={url}"
+              disabled
+            ></textarea>
+          </label>
         </div>
 
         <div class="top-actions">
@@ -129,7 +139,8 @@
       </p>
       <p>
         Catatan proxy: gunakan URL proxy template yang memuat parameter
-        {url}, misalnya https://proxy.example/fetch?url={url}
+        {url}, misalnya https://proxy.example/fetch?url={url}. Anda juga bisa
+        isi Proxy Pool agar sistem auto-retry antar proxy.
       </p>
     </footer>
 

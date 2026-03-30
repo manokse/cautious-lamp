@@ -50,6 +50,7 @@ export async function onRequest(context) {
       maxOtpWaitSeconds: body.maxOtpWaitSeconds,
       proxyEnabled: Boolean(body.proxyEnabled),
       proxyUrl: body.proxyUrl || "",
+      proxyUrls: body.proxyUrls || [],
       anonKey: env.BROWSERLESS_SUPABASE_ANON_KEY || "",
     });
 

@@ -57,6 +57,7 @@ export default async function handler(request) {
       maxOtpWaitSeconds: body.maxOtpWaitSeconds,
       proxyEnabled: Boolean(body.proxyEnabled),
       proxyUrl: body.proxyUrl || "",
+      proxyUrls: body.proxyUrls || [],
       anonKey: envAnonKey,
     });
 

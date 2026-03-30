@@ -123,7 +123,8 @@ label {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   border: 1px solid var(--line);
   background: #fff;
@@ -134,9 +135,19 @@ select {
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   outline: 2px solid rgba(15, 157, 138, 0.2);
   border-color: var(--accent-alt);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 86px;
+}
+
+.span-2 {
+  grid-column: span 2;
 }
 
 .checkbox-row {
@@ -316,5 +327,9 @@ pre {
 
   .field-grid {
     grid-template-columns: 1fr;
+  }
+
+  .span-2 {
+    grid-column: span 1;
   }
 }

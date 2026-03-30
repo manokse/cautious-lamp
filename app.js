@@ -7,6 +7,7 @@ const ui = {
   useCase: document.getElementById("useCase"),
   proxyEnabled: document.getElementById("proxyEnabled"),
   proxyUrl: document.getElementById("proxyUrl"),
+  proxyPool: document.getElementById("proxyPool"),
   startBtn: document.getElementById("startBtn"),
   stopBtn: document.getElementById("stopBtn"),
   downloadBtn: document.getElementById("downloadBtn"),
@@ -17,7 +18,6 @@ const ui = {
 };
 
 const projectTypes = ["newProject", "existingProject", "migration"];
-const attributions = ["searchEngine", "manualGenerator", "direct"];
 
 const state = {
   running: false,
@@ -38,7 +38,8 @@ function buildFakeProfile() {
     plan: ui.plan.value,
     useCase: ui.useCase.value,
     projectType: pick(projectTypes),
-    attribution: pick(attributions),
+    // Known-good enum from observed Browserless signup traffic.
+    attribution: "searchEngine",
     frontendUrl: "https://www.browserless.io/signup/payment-completed",
     line1: faker.location.streetAddress(),
     line2: "",
@@ -52,6 +53,13 @@ function buildFakeProfile() {
 
 function makePreferredToken() {
   return faker.string.alphanumeric(48).toLowerCase();
+}
+
+function parseProxyPool(rawText) {
+  return String(rawText || "")
+    .split(/[\r\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function setStatus(text) {
@@ -184,6 +192,10 @@ async function callGenerateApi(payload) {
         ? "route"
         : "runtime";
 
+      if (kind === "runtime") {
+        throw new Error(`Generate gagal dari backend. Detail: ${endpoint} -> ${message}`);
+      }
+
       failures.push({
         endpoint,
         message,
@@ -215,9 +227,10 @@ async function runBatchGeneration() {
 
   const proxyEnabled = ui.proxyEnabled.checked;
   const proxyUrl = ui.proxyUrl.value.trim();
+  const proxyUrls = parseProxyPool(ui.proxyPool.value);
 
-  if (proxyEnabled && !proxyUrl) {
-    setStatus("proxy aktif tapi Proxy URL kosong");
+  if (proxyEnabled && !proxyUrl && proxyUrls.length === 0) {
+    setStatus("proxy aktif tapi Proxy URL/Proxy Pool kosong");
     return;
   }
 
@@ -240,6 +253,7 @@ async function runBatchGeneration() {
       maxOtpWaitSeconds,
       proxyEnabled,
       proxyUrl,
+      proxyUrls,
       preferredToken: makePreferredToken(),
       profile: buildFakeProfile(),
     };
@@ -253,7 +267,10 @@ async function runBatchGeneration() {
         otpCode: result.otpCode,
         apiKey: result.apiKey,
         proxyUsed: result.proxyUsed,
-        note: result.inboxMeta?.subject || "ok",
+        proxyUrlUsed: result.proxyUrlUsed || "",
+        note:
+          result.inboxMeta?.subject ||
+          (result.proxyUrlUsed ? `proxy: ${result.proxyUrlUsed}` : "ok"),
         log: result.operationLog || [],
       });
 
@@ -266,6 +283,7 @@ async function runBatchGeneration() {
         otpCode: "",
         apiKey: "",
         proxyUsed: proxyEnabled,
+        proxyUrlUsed: "",
         note: error instanceof Error ? error.message : "unknown error",
         log: [],
       });
@@ -314,6 +332,7 @@ function exportTxt() {
     lines.push(`OTP: ${result.otpCode || "-"}`);
     lines.push(`API Key: ${result.apiKey || "-"}`);
     lines.push(`Proxy: ${result.proxyUsed ? "yes" : "no"}`);
+    lines.push(`Proxy URL: ${result.proxyUrlUsed || "-"}`);
     lines.push(`Note: ${result.note || "-"}`);
     lines.push("");
   }
@@ -330,6 +349,7 @@ function exportTxt() {
 
 ui.proxyEnabled.addEventListener("change", () => {
   ui.proxyUrl.disabled = !ui.proxyEnabled.checked;
+  ui.proxyPool.disabled = !ui.proxyEnabled.checked;
 });
 
 ui.startBtn.addEventListener("click", () => {

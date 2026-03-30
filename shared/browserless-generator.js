@@ -26,8 +26,8 @@ mutation signup($user: signUpSession, $completedActionId: String, $promoCode: St
 `;
 
 const CHANGE_TOKEN_MUTATION = `
-mutation changeToken($token: String!) {
-  changeToken(token: $token) {
+mutation changeToken($token: String!, $authToken: String) {
+  changeToken(token: $token, authToken: $authToken) {
     token
     __typename
   }
@@ -35,8 +35,8 @@ mutation changeToken($token: String!) {
 `;
 
 const GET_ACCOUNT_QUERY = `
-query getAccount($apiToken: String) {
-  account(apiToken: $apiToken) {
+query getAccount($authToken: String) {
+  account(authToken: $authToken) {
     email
     ownerEmail
     apiKey
@@ -254,12 +254,15 @@ function normalizeProfile(profile) {
     ? profile.useCases.map((value) => String(value)).filter(Boolean)
     : [String(profile.useCase || "scraping")];
 
+  // Browserless currently accepts this enum value from observed traffic.
+  const attribution = "searchEngine";
+
   return {
     fullName,
     company,
     projectType,
     useCases,
-    attribution: String(profile.attribution || "manualGenerator"),
+    attribution,
     plan: String(profile.plan || "free"),
     frontendUrl: String(profile.frontendUrl || "https://www.browserless.io/signup/payment-completed"),
     address: {
@@ -538,17 +541,91 @@ async function postGraphql(operationName, query, variables, context) {
   }
 
   if (body?.errors?.length) {
-    throw new Error(`GraphQL ${operationName} error: ${body.errors[0].message || "unknown"}`);
+    const msg = body.errors[0].message || "unknown";
+    if (/2 free accounts per ip address/i.test(msg)) {
+      throw new Error(
+        `GraphQL ${operationName} error: ${msg}. Gunakan proxy/residential IP berbeda atau akun berbayar untuk lanjut generate.`,
+      );
+    }
+
+    throw new Error(`GraphQL ${operationName} error: ${msg}`);
   }
 
   return body;
 }
 
-export async function generateBrowserlessAccount(options = {}) {
-  const proxyOptions = {
-    proxyEnabled: Boolean(options.proxyEnabled),
-    proxyUrl: String(options.proxyUrl || "").trim(),
-  };
+function normalizeProxyUrlsInput(proxyUrls) {
+  if (Array.isArray(proxyUrls)) {
+    return proxyUrls
+      .map((item) => String(item || "").trim())
+      .filter(Boolean);
+  }
+
+  const raw = String(proxyUrls || "");
+  if (!raw.trim()) {
+    return [];
+  }
+
+  return raw
+    .split(/[\r\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function buildProxyCandidates(options) {
+  const proxyEnabled = Boolean(options.proxyEnabled);
+  const merged = [];
+  const singleProxy = String(options.proxyUrl || "").trim();
+  const proxyPool = normalizeProxyUrlsInput(options.proxyUrls);
+
+  if (singleProxy) {
+    merged.push(singleProxy);
+  }
+
+  for (const item of proxyPool) {
+    if (!merged.includes(item)) {
+      merged.push(item);
+    }
+  }
+
+  if (!proxyEnabled) {
+    return [{ proxyEnabled: false, proxyUrl: "", label: "direct" }];
+  }
+
+  if (!merged.length) {
+    return [{ proxyEnabled: false, proxyUrl: "", label: "direct" }];
+  }
+
+  const candidates = merged.map((proxyUrl) => ({
+    proxyEnabled: true,
+    proxyUrl,
+    label: proxyUrl,
+  }));
+
+  candidates.push({ proxyEnabled: false, proxyUrl: "", label: "direct-fallback" });
+  return candidates;
+}
+
+function isRetryableAttemptError(message) {
+  const text = String(message || "").toLowerCase();
+  return (
+    text.includes("2 free accounts per ip address") ||
+    text.includes("otp verify failed") ||
+    text.includes("failed: 403") ||
+    text.includes("failed: 429") ||
+    text.includes("failed: 500") ||
+    text.includes("failed: 502") ||
+    text.includes("failed: 503") ||
+    text.includes("failed: 504") ||
+    text.includes("network") ||
+    text.includes("timeout") ||
+    text.includes("unable to extract browserless api key")
+  );
+}
+
+async function generateBrowserlessAccountSingle(options = {}, proxyOptions, proxyMeta) {
+  const effectiveProxy = proxyOptions || { proxyEnabled: false, proxyUrl: "" };
+  const effectiveMeta = proxyMeta || { attempt: 1, total: 1, label: "direct" };
 
   const maxOtpWaitSeconds = Math.max(
     15,
@@ -556,8 +633,12 @@ export async function generateBrowserlessAccount(options = {}) {
   );
 
   const operationLog = [];
+  operationLog.push(
+    `[${nowIso()}] proxy attempt ${effectiveMeta.attempt}/${effectiveMeta.total}: ${effectiveMeta.label}`,
+  );
+
   const requestUrl = String(options.requestUrl || "https://localhost");
-  const domains = await loadDomains(requestUrl, proxyOptions);
+  const domains = await loadDomains(requestUrl, { proxyEnabled: false, proxyUrl: "" });
   const profile = normalizeProfile(options.profile || {});
 
   const user = randomString(10);
@@ -572,7 +653,7 @@ export async function generateBrowserlessAccount(options = {}) {
 
   operationLog.push(`[${nowIso()}] mailbox prepared: ${email}`);
 
-  const setupResult = await setupEmailfakeMailbox(mailbox, proxyOptions);
+  const setupResult = await setupEmailfakeMailbox(mailbox, effectiveProxy);
   operationLog.push(`[${nowIso()}] emailfake setup status: ${setupResult.setupStatus}`);
 
   await postDataBrowserless(
@@ -587,7 +668,7 @@ export async function generateBrowserlessAccount(options = {}) {
     },
     {
       anonKey: options.anonKey,
-      proxy: proxyOptions,
+      proxy: effectiveProxy,
     },
   );
   operationLog.push(`[${nowIso()}] otp requested`);
@@ -596,7 +677,7 @@ export async function generateBrowserlessAccount(options = {}) {
     mailbox,
     setupResult.cookieHeader,
     maxOtpWaitSeconds,
-    proxyOptions,
+    effectiveProxy,
     operationLog,
   );
 
@@ -623,7 +704,7 @@ export async function generateBrowserlessAccount(options = {}) {
         },
         {
           anonKey: options.anonKey,
-          proxy: proxyOptions,
+          proxy: effectiveProxy,
         },
       );
 
@@ -665,7 +746,7 @@ export async function generateBrowserlessAccount(options = {}) {
       },
       {
         anonKey: options.anonKey,
-        proxy: proxyOptions,
+        proxy: effectiveProxy,
       },
     );
 
@@ -708,90 +789,119 @@ export async function generateBrowserlessAccount(options = {}) {
     frontendUrl: profile.frontendUrl,
   };
 
-  const signupResult = await postGraphql(
-    "signup",
-    SIGNUP_MUTATION,
-    signupVariables,
-    {
-      proxy: proxyOptions,
-      accessToken,
-    },
-  );
-  operationLog.push(`[${nowIso()}] signup mutation completed`);
-
-  let changeTokenResult = {};
+  let signupResult = {};
+  let signupError = "";
   try {
-    changeTokenResult = await postGraphql(
-      "changeToken",
-      CHANGE_TOKEN_MUTATION,
+    signupResult = await postGraphql(
+      "signup",
+      SIGNUP_MUTATION,
+      signupVariables,
       {
-        token: desiredToken,
-      },
-      {
-        proxy: proxyOptions,
+        proxy: effectiveProxy,
         accessToken,
       },
     );
-    operationLog.push(`[${nowIso()}] changeToken mutation completed`);
+    operationLog.push(`[${nowIso()}] signup mutation completed`);
   } catch (error) {
-    operationLog.push(
-      `[${nowIso()}] changeToken skipped/failed: ${error instanceof Error ? error.message : "unknown"}`,
-    );
-  }
-
-  let accountResult = {};
-  try {
-    accountResult = await postGraphql(
-      "getAccount",
-      GET_ACCOUNT_QUERY,
-      {},
-      {
-        proxy: proxyOptions,
-        accessToken,
-      },
-    );
-    operationLog.push(`[${nowIso()}] getAccount with session completed`);
-  } catch (error) {
-    operationLog.push(
-      `[${nowIso()}] getAccount session failed: ${error instanceof Error ? error.message : "unknown"}`,
-    );
+    signupError = error instanceof Error ? error.message : "unknown";
+    operationLog.push(`[${nowIso()}] signup mutation failed: ${signupError}`);
   }
 
   const signupAuthToken = pickFirstString([
     signupResult?.data?.signupCloudUnits?.authToken,
   ]);
 
-  if (!accountResult?.data?.account && signupAuthToken) {
+  let accountResult = {};
+  if (signupAuthToken) {
     try {
       accountResult = await postGraphql(
         "getAccount",
         GET_ACCOUNT_QUERY,
         {
-          apiToken: signupAuthToken,
+          authToken: signupAuthToken,
         },
         {
-          proxy: proxyOptions,
+          proxy: effectiveProxy,
           accessToken: "",
         },
       );
-      operationLog.push(`[${nowIso()}] getAccount with apiToken completed`);
+      operationLog.push(`[${nowIso()}] getAccount with authToken completed`);
     } catch (error) {
       operationLog.push(
-        `[${nowIso()}] getAccount apiToken failed: ${error instanceof Error ? error.message : "unknown"}`,
+        `[${nowIso()}] getAccount authToken failed: ${error instanceof Error ? error.message : "unknown"}`,
       );
     }
+  } else {
+    operationLog.push(`[${nowIso()}] getAccount authToken skipped: empty signup authToken`);
+  }
+
+  if (!accountResult?.data?.account) {
+    try {
+      accountResult = await postGraphql(
+        "getAccount",
+        GET_ACCOUNT_QUERY,
+        {
+          authToken: null,
+        },
+        {
+          proxy: effectiveProxy,
+          accessToken,
+        },
+      );
+      operationLog.push(`[${nowIso()}] getAccount with session fallback completed`);
+    } catch (error) {
+      operationLog.push(
+        `[${nowIso()}] getAccount session fallback failed: ${error instanceof Error ? error.message : "unknown"}`,
+      );
+    }
+  }
+
+  let changeTokenResult = {};
+  if (signupAuthToken) {
+    try {
+      changeTokenResult = await postGraphql(
+        "changeToken",
+        CHANGE_TOKEN_MUTATION,
+        {
+          token: desiredToken,
+          authToken: signupAuthToken,
+        },
+        {
+          proxy: effectiveProxy,
+          accessToken,
+        },
+      );
+      operationLog.push(`[${nowIso()}] changeToken mutation completed`);
+    } catch (error) {
+      operationLog.push(
+        `[${nowIso()}] changeToken skipped/failed: ${error instanceof Error ? error.message : "unknown"}`,
+      );
+    }
+  } else {
+    operationLog.push(`[${nowIso()}] changeToken skipped: empty signup authToken`);
   }
 
   const apiKey = pickFirstString([
     accountResult?.data?.account?.apiKey,
     changeTokenResult?.data?.changeToken?.token,
-    signupAuthToken,
-    desiredToken,
   ]);
+
+  if (!apiKey) {
+    const reasons = [
+      signupError && `signup=${signupError}`,
+      !accessToken && "missing_access_token",
+      "no_api_key_in_account_or_changeToken",
+    ].filter(Boolean);
+
+    throw new Error(`Unable to extract Browserless API key (${reasons.join("; ")})`);
+  }
 
   return {
     generatedAt: nowIso(),
-    proxyUsed: Boolean(proxyOptions.proxyEnabled && proxyOptions.proxyUrl),
+    proxyUsed: Boolean(effectiveProxy.proxyEnabled && effectiveProxy.proxyUrl),
+    proxyUrlUsed: effectiveProxy.proxyUrl || "",
+    proxyAttempt: effectiveMeta.attempt,
+    proxyAttemptTotal: effectiveMeta.total,
     email,
     user,
     domain,
@@ -839,4 +949,35 @@ export async function generateBrowserlessAccount(options = {}) {
     },
     operationLog,
   };
+}
+
+export async function generateBrowserlessAccount(options = {}) {
+  const proxyCandidates = buildProxyCandidates(options);
+  const errors = [];
+
+  for (let index = 0; index < proxyCandidates.length; index += 1) {
+    const candidate = proxyCandidates[index];
+
+    try {
+      return await generateBrowserlessAccountSingle(options, candidate, {
+        attempt: index + 1,
+        total: proxyCandidates.length,
+        label: candidate.label,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown";
+      errors.push(`[${candidate.label}] ${message}`);
+
+      const hasNext = index < proxyCandidates.length - 1;
+      if (!hasNext) {
+        break;
+      }
+
+      if (!isRetryableAttemptError(message)) {
+        break;
+      }
+    }
+  }
+
+  throw new Error(`All attempts failed: ${errors.join(" | ")}`);
 }

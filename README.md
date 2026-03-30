@@ -6,6 +6,7 @@ Fitur utama:
 
 - Pilih jumlah API key yang ingin digenerate
 - Opsi proxy on/off
+- Proxy pool (multi proxy) dengan auto-retry antar proxy
 - Auto temp mail provider emailfake.com
 - Domain email otomatis dari domain.txt
 - OTP parser untuk format inbox seperti:
@@ -23,6 +24,8 @@ Fitur utama:
 - api/generate.js (Vercel)
 - functions/api/generate.js (Cloudflare Pages Functions)
 - _routes.json (Cloudflare routing hints)
+- worker.js, wrangler.toml (Cloudflare Workers)
+- test_browserless_flow.py (diagnostic tester)
 
 ## Cara jalan lokal
 
@@ -95,6 +98,8 @@ Opsional environment variable:
 
 Mode proxy aktif bila toggle proxy dinyalakan dan Proxy URL diisi.
 
+Anda juga bisa isi `Proxy Pool` (satu proxy per baris). Sistem akan mencoba proxy satu per satu jika attempt sebelumnya gagal.
+
 Format yang didukung:
 
 - https://proxy.example/fetch?url={url}
@@ -138,3 +143,18 @@ Checklist:
 - Jalankan batch kecil dulu (1-2 akun) untuk validasi.
 - Pastikan domain email di `domain.txt` masih valid di emailfake.
 - Redeploy agar parser OTP terbaru aktif (parser sekarang mencoba banyak kandidat OTP sebelum gagal).
+
+## Troubleshooting GraphQL signup 400 / IP limit
+
+Jika log berisi pesan seperti:
+
+- `You can only create 2 free accounts per IP address`
+
+Berarti Anda kena limit akun free per-IP dari Browserless.
+
+Solusi:
+
+- Aktifkan proxy (IP berbeda) di UI.
+- Gunakan residential/static proxy yang stabil.
+- Turunkan concurrency (generate 1 per batch terlebih dulu).
+- Pertimbangkan akun berbayar Browserless jika butuh volume tinggi.
