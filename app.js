@@ -22,7 +22,7 @@ const ui = {
 };
 
 const projectTypes = ["newProject", "existingProject", "migration"];
-const API_ENDPOINTS = ["/api/generate", "/api/generate/"];
+const API_ENDPOINTS = buildApiEndpoints();
 
 const state = {
   running: false,
@@ -125,6 +125,22 @@ function parseProxyPool(rawText) {
   }
 
   return unique;
+}
+
+function buildApiEndpoints() {
+  const params = new URLSearchParams(window.location.search);
+  const rawApiBase = String(params.get("apiBase") || "").trim();
+
+  if (!rawApiBase) {
+    return ["/api/generate", "/api/generate/"];
+  }
+
+  const normalized = rawApiBase.replace(/\/+$/, "");
+  if (/\/api\/generate$/i.test(normalized)) {
+    return [normalized, `${normalized}/`];
+  }
+
+  return [`${normalized}/api/generate`, `${normalized}/api/generate/`];
 }
 
 function hasTemplateToken(value) {

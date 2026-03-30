@@ -106,6 +106,18 @@ Opsional environment variable:
 
 - BROWSERLESS_SUPABASE_ANON_KEY
 
+## Split Deploy (Pages frontend + Node backend)
+
+Tidak wajib memindahkan semua ke Vercel. Anda bisa tetap host frontend di Pages/Workers lalu arahkan API ke backend Node terpisah (Vercel/Railway/Render/VPS).
+
+Caranya: tambahkan query parameter `apiBase` pada URL frontend.
+
+Contoh:
+
+- https://your-pages-domain.pages.dev/?apiBase=https://your-node-api-domain.vercel.app
+
+Jika `apiBase` sudah mengandung `/api/generate`, frontend tetap akan mendeteksi endpoint dengan benar.
+
 ## Catatan Proxy
 
 Mode proxy aktif bila toggle proxy dinyalakan dan Proxy URL diisi.
