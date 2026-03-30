@@ -1,3 +1,5 @@
+import "https-proxy-agent";
+
 export const config = {
   runtime: "nodejs",
   maxDuration: 300,

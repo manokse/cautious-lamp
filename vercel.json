@@ -1,8 +1,7 @@
 {
   "functions": {
     "api/generate.js": {
-      "maxDuration": 300,
-      "includeFiles": "node_modules/**"
+      "maxDuration": 300
     }
   }
 }
