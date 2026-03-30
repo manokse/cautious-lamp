@@ -1,11 +1,35 @@
-import { HttpsProxyAgent } from "https-proxy-agent";
-
 export const config = {
   runtime: "nodejs",
   maxDuration: 300,
 };
 
-const NODE_PROXY_TRANSPORT = HttpsProxyAgent?.name || "HttpsProxyAgent";
+let NODE_PROXY_TRANSPORT = "unknown";
+let NODE_PROXY_TRANSPORT_ERROR = "";
+const NODE_PROXY_TRANSPORT_PROBE = import("https-proxy-agent")
+  .then((module) => {
+    const HttpsProxyAgent =
+      module?.HttpsProxyAgent || module?.default?.HttpsProxyAgent || module?.default;
+
+    NODE_PROXY_TRANSPORT =
+      typeof HttpsProxyAgent === "function"
+        ? HttpsProxyAgent.name || "HttpsProxyAgent"
+        : "module-loaded";
+
+    return true;
+  })
+  .catch((error) => {
+    NODE_PROXY_TRANSPORT = "unavailable";
+    NODE_PROXY_TRANSPORT_ERROR = error instanceof Error ? error.message : String(error || "unknown");
+    return false;
+  });
+
+async function settleProxyTransportProbe() {
+  try {
+    await NODE_PROXY_TRANSPORT_PROBE;
+  } catch {
+    // Promise rejection is already handled in probe initialization.
+  }
+}
 
 function commonHeaders() {
   return {
@@ -102,7 +126,7 @@ async function runGenerate(body, requestUrl, anonKey) {
 }
 
 function healthPayload() {
-  return {
+  const payload = {
     ok: true,
     service: "browserless-generator",
     method: "GET",
@@ -110,9 +134,17 @@ function healthPayload() {
     forwardProxySupported: true,
     proxyTransport: NODE_PROXY_TRANSPORT,
   };
+
+  if (NODE_PROXY_TRANSPORT_ERROR) {
+    payload.proxyTransportError = NODE_PROXY_TRANSPORT_ERROR;
+  }
+
+  return payload;
 }
 
 async function handleFetchRequest(request) {
+  await settleProxyTransportProbe();
+
   if (request.method === "OPTIONS") {
     return new Response(null, {
       status: 204,
@@ -159,6 +191,8 @@ async function handleFetchRequest(request) {
 }
 
 async function handleNodeRequest(req, res) {
+  await settleProxyTransportProbe();
+
   if (req.method === "OPTIONS") {
     writeNodeOptions(res);
     return;
