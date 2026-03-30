@@ -230,6 +230,19 @@ def score_candidate(candidate: dict[str, Any]) -> int:
     return score
 
 
+def dedupe_rank_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    best_by_code: dict[str, tuple[int, dict[str, Any]]] = {}
+    for item in candidates:
+        score = score_candidate(item)
+        code = item["code"]
+        current = best_by_code.get(code)
+        if current is None or score > current[0]:
+            best_by_code[code] = (score, item)
+
+    ranked = sorted(best_by_code.values(), key=lambda x: x[0], reverse=True)
+    return [item for _, item in ranked]
+
+
 def summarize_http(result: HttpResult) -> str:
     text = result.text.strip().replace("\n", " ")
     return f"status={result.status} body={text[:220]}"
@@ -387,7 +400,7 @@ def direct_test(args: argparse.Namespace) -> int:
     if not candidates:
         raise RuntimeError("No OTP candidate found from emailfake")
 
-    candidates.sort(key=score_candidate, reverse=True)
+    candidates = dedupe_rank_candidates(candidates)
     print("otp candidates:", [{"code": c["code"], "channel": c["channel"], "reason": c["reason"]} for c in candidates])
 
     verify_data = None
@@ -554,7 +567,13 @@ def direct_test(args: argparse.Namespace) -> int:
     change_token = client.request(
         "https://api.browserless.io/graphql",
         method="POST",
-        headers=graphql_headers,
+        headers={
+            "accept": "*/*",
+            "content-type": "application/json",
+            "origin": "https://www.browserless.io",
+            "referer": "https://www.browserless.io/",
+            "accept-encoding": "identity",
+        },
         data=json.dumps(
             {
                 "operationName": "changeToken",

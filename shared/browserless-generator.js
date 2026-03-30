@@ -439,14 +439,31 @@ async function pollOtpFromEmailfake(mailbox, cookieHeader, maxWaitSeconds, proxy
     }
 
     if (discovered.length) {
-      discovered.sort((a, b) => scoreOtpCandidate(b) - scoreOtpCandidate(a));
-      const best = discovered[0];
+      const dedupMap = new Map();
+      for (const item of discovered) {
+        const score = scoreOtpCandidate(item);
+        const existing = dedupMap.get(item.code);
+        if (!existing || score > existing.score) {
+          dedupMap.set(item.code, {
+            ...item,
+            score,
+          });
+        }
+      }
+
+      const ranked = [...dedupMap.values()].sort((a, b) => b.score - a.score);
+      const best = ranked[0];
 
       return {
         otpCode: best.code,
         channelId: best.channelId,
         inboxMeta: best.inboxMeta,
-        otpCandidates: discovered,
+        otpCandidates: ranked.map((entry) => ({
+          code: entry.code,
+          reason: entry.reason,
+          channelId: entry.channelId,
+          inboxMeta: entry.inboxMeta,
+        })),
       };
     }
 
@@ -856,27 +873,58 @@ async function generateBrowserlessAccountSingle(options = {}, proxyOptions, prox
     }
   }
 
+  const existingApiKey = pickFirstString([
+    accountResult?.data?.account?.apiKey,
+  ]);
+
+  const forceChangeToken = Boolean(options.forceChangeToken);
   let changeTokenResult = {};
-  if (signupAuthToken) {
-    try {
-      changeTokenResult = await postGraphql(
-        "changeToken",
-        CHANGE_TOKEN_MUTATION,
-        {
-          token: desiredToken,
-          authToken: signupAuthToken,
-        },
-        {
-          proxy: effectiveProxy,
-          accessToken,
-        },
-      );
-      operationLog.push(`[${nowIso()}] changeToken mutation completed`);
-    } catch (error) {
-      operationLog.push(
-        `[${nowIso()}] changeToken skipped/failed: ${error instanceof Error ? error.message : "unknown"}`,
-      );
+  if (signupAuthToken && (!existingApiKey || forceChangeToken)) {
+    const mutationVariables = {
+      token: desiredToken,
+      authToken: signupAuthToken,
+    };
+
+    const attemptContexts = [
+      {
+        proxy: effectiveProxy,
+        accessToken: "",
+        label: "authToken-only",
+      },
+      {
+        proxy: effectiveProxy,
+        accessToken,
+        label: "authToken+session",
+      },
+    ];
+
+    let changeOk = false;
+    for (const contextTry of attemptContexts) {
+      try {
+        changeTokenResult = await postGraphql(
+          "changeToken",
+          CHANGE_TOKEN_MUTATION,
+          mutationVariables,
+          {
+            proxy: contextTry.proxy,
+            accessToken: contextTry.accessToken,
+          },
+        );
+        operationLog.push(`[${nowIso()}] changeToken mutation completed via ${contextTry.label}`);
+        changeOk = true;
+        break;
+      } catch (error) {
+        operationLog.push(
+          `[${nowIso()}] changeToken attempt ${contextTry.label} failed: ${error instanceof Error ? error.message : "unknown"}`,
+        );
+      }
     }
+
+    if (!changeOk) {
+      operationLog.push(`[${nowIso()}] changeToken skipped after retries`);
+    }
+  } else if (existingApiKey && !forceChangeToken) {
+    operationLog.push(`[${nowIso()}] changeToken skipped: existing apiKey already available`);
   } else {
     operationLog.push(`[${nowIso()}] changeToken skipped: empty signup authToken`);
   }
