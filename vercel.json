@@ -4,5 +4,11 @@
       "maxDuration": 300,
       "includeFiles": "shared/**"
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/api/test-proxy",
+      "destination": "/api/generate"
+    }
+  ]
 }
