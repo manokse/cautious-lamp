@@ -3,12 +3,26 @@
     "api/generate.js": {
       "maxDuration": 300,
       "includeFiles": "shared/**"
+    },
+    "api/save-result.js": {
+      "maxDuration": 60
+    },
+    "api/get-results.js": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
     {
       "source": "/api/test-proxy",
       "destination": "/api/generate"
+    },
+    {
+      "source": "/api/save-result",
+      "destination": "/api/save-result.js"
+    },
+    {
+      "source": "/api/get-results",
+      "destination": "/api/get-results.js"
     }
   ]
 }

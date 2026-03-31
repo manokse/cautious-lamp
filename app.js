@@ -836,7 +836,9 @@ async function processSingleItem(currentIndex, config) {
 
   try {
     const result = await callGenerateApi(payload, controller.signal);
-    state.results.push({
+    const duration = Math.round(performance.now() - startedAt);
+    
+    const resultData = {
       index: currentIndex,
       status: "success",
       email: result.email,
@@ -844,17 +846,25 @@ async function processSingleItem(currentIndex, config) {
       apiKey: result.apiKey,
       proxyUsed: result.proxyUsed,
       proxyUrlUsed: result.proxyUrlUsed || "",
-      durationMs: Math.round(performance.now() - startedAt),
+      durationMs: duration,
       note:
         result.inboxMeta?.subject ||
         (result.proxyUrlUsed ? `proxy: ${result.proxyUrlUsed}` : "ok"),
       log: result.operationLog || [],
-    });
+      timestamp: new Date().toISOString(),
+    };
+    
+    state.results.push(resultData);
+    
+    // Save to Vercel KV
+    saveResultToKV(resultData).catch(err => console.error('[KV] Save error:', err));
 
     ui.lastLog.textContent = formatLog(result.operationLog);
   } catch (error) {
+    const duration = Math.round(performance.now() - startedAt);
+    
     if (state.stopRequested && isAbortError(error)) {
-      state.results.push({
+      const resultData = {
         index: currentIndex,
         status: "stopped",
         email: "",
@@ -862,12 +872,16 @@ async function processSingleItem(currentIndex, config) {
         apiKey: "",
         proxyUsed: config.proxyEnabled,
         proxyUrlUsed: "",
-        durationMs: Math.round(performance.now() - startedAt),
+        durationMs: duration,
         note: "dibatalkan user",
         log: [],
-      });
+        timestamp: new Date().toISOString(),
+      };
+      
+      state.results.push(resultData);
+      saveResultToKV(resultData).catch(err => console.error('[KV] Save error:', err));
     } else {
-      state.results.push({
+      const resultData = {
         index: currentIndex,
         status: "failed",
         email: "",
@@ -875,10 +889,14 @@ async function processSingleItem(currentIndex, config) {
         apiKey: "",
         proxyUsed: config.proxyEnabled,
         proxyUrlUsed: "",
-        durationMs: Math.round(performance.now() - startedAt),
+        durationMs: duration,
         note: error instanceof Error ? error.message : "unknown error",
         log: [],
-      });
+        timestamp: new Date().toISOString(),
+      };
+      
+      state.results.push(resultData);
+      saveResultToKV(resultData).catch(err => console.error('[KV] Save error:', err));
 
       ui.lastLog.textContent =
         `Error item ${currentIndex}: ${error instanceof Error ? error.message : "unknown"}`;
@@ -1062,17 +1080,70 @@ function syncExecutionControls() {
 function showToast(message, type = 'info') {
   const container = document.getElementById('toastContainer');
   if (!container) return;
-  
+
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
   toast.textContent = message;
   container.appendChild(toast);
-  
+
   setTimeout(() => {
     toast.style.opacity = '0';
     toast.style.transform = 'translateX(20px)';
     setTimeout(() => toast.remove(), 200);
   }, 3000);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VERCEL KV INTEGRATION
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Secret token for KV API (obfuscated to avoid casual inspection)
+const _kvToken = String.fromCharCode(120, 55, 107, 57, 109, 50, 112, 52, 113, 56, 119, 49); // x7k9m2p4q8w1
+
+async function saveResultToKV(resultData) {
+  try {
+    const response = await fetch('/api/save-result', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-browserless-token': _kvToken,
+      },
+      body: JSON.stringify(resultData),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to save');
+    }
+
+    console.log('[KV] Result saved:', resultData.email);
+  } catch (error) {
+    // Silent fail - KV might not be configured
+    console.debug('[KV] Save skipped (KV not configured):', error.message);
+  }
+}
+
+async function loadResultsFromKV() {
+  try {
+    const response = await fetch('/api/get-results', {
+      headers: {
+        'x-browserless-token': _kvToken,
+      },
+    });
+    if (!response.ok) {
+      throw new Error('Failed to load results');
+    }
+
+    const data = await response.json();
+    if (data.success && data.results && data.results.length > 0) {
+      state.results = data.results;
+      console.log('[KV] Loaded', state.results.length, 'results from KV');
+      return true;
+    }
+  } catch (error) {
+    console.debug('[KV] Load skipped (KV not configured):', error.message);
+  }
+  return false;
 }
 
 // Theme Toggle
@@ -1162,30 +1233,40 @@ async function fetchProxiflyProxies() {
 
 // Initialize UI event listeners
 function initUI() {
+  console.log('[initUI] Starting initialization...');
+  
   // Theme toggle
   if (ui.themeToggle) {
+    console.log('[initUI] Theme toggle found, adding listener');
     ui.themeToggle.addEventListener('click', toggleTheme);
+  } else {
+    console.error('[initUI] Theme toggle NOT found!');
   }
   initTheme();
-  
+  console.log('[initUI] Theme initialized');
+
   // Proxy toggle
-  ui.proxyEnabled.addEventListener("change", syncProxyControls);
+  if (ui.proxyEnabled) {
+    ui.proxyEnabled.addEventListener("change", syncProxyControls);
+  }
   
   // Execution mode
-  ui.executionMode.addEventListener("change", syncExecutionControls);
-  
+  if (ui.executionMode) {
+    ui.executionMode.addEventListener("change", syncExecutionControls);
+  }
+
   // Sync execution mode with segmented control
   document.querySelectorAll('input[name="execMode"]').forEach(radio => {
     radio.addEventListener('change', (e) => {
-      ui.executionMode.value = e.target.value;
+      if (ui.executionMode) ui.executionMode.value = e.target.value;
       syncExecutionControls();
     });
   });
-  
+
   // Sync export format with segmented control
   document.querySelectorAll('input[name="exportFmt"]').forEach(radio => {
     radio.addEventListener('change', (e) => {
-      ui.keyExportFormat.value = e.target.value;
+      if (ui.keyExportFormat) ui.keyExportFormat.value = e.target.value;
     });
   });
   
@@ -1347,16 +1428,12 @@ function initUI() {
   const originalRunBatch = runBatchGeneration;
   window.runBatchGenerationOriginal = originalRunBatch;
   
-  initVideyScraper();
   syncProxyControls();
   syncExecutionControls();
   setStatus("Ready to start");
   updateSummary();
   detectBackendCapabilities();
 }
-
-// Initialize on DOM ready
-initUI();
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // VIEW SWITCHING & NAVIGATION
@@ -1381,11 +1458,7 @@ function initViewSwitching() {
           view.classList.add('active');
         }
       });
-
-      // Refresh Videy keys if needed
-      if (targetView === 'videy-scraper' && typeof window.updateVideyKeys === 'function') {
-        window.updateVideyKeys();
-      }
+      
       // Close mobile sidebar if open
       closeMobileSidebar();
     });
@@ -1434,178 +1507,7 @@ function closeMobileSidebar() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// VIDEY SCRAPER
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function temp_initVideyScraper() {
-  const scrapeBtn = document.getElementById('scrapeVideyBtn');
-  const urlInput = document.getElementById('videyUrl');
-  const apiKeyInput = document.getElementById('videyApiKey');
-  const selectKeyEl = document.getElementById('videySelectKey');
-  const copyBtn = document.getElementById('copyVideyLink');
-
-  // Update select options from successful generator results
-  const updateKeyOptions = () => {
-    if (!selectKeyEl) return;
-    const currentVal = selectKeyEl.value;
-    selectKeyEl.innerHTML = '<option value="">-- Select Key --</option>';
-    
-    state.results.filter(r => r.status === 'success' && r.apiKey).forEach(r => {
-      const option = document.createElement('option');
-      option.value = r.apiKey;
-      option.textContent = `${r.email.split('@')[0]} (${r.apiKey.substring(0, 8)}...)`;
-      selectKeyEl.appendChild(option);
-    });
-    
-    selectKeyEl.value = currentVal;
-  };
-
-  // Sync manual input with select
-  selectKeyEl?.addEventListener('change', () => {
-    if (apiKeyInput && selectKeyEl.value) {
-      apiKeyInput.value = selectKeyEl.value;
-    }
-  });
-
-  // Observe state.results to update options
-  const observer = new MutationObserver(() => updateKeyOptions());
-  // Since state.results is a plain array, we'll manually call it on view change or periodic
-  
-  scrapeBtn?.addEventListener('click', async () => {
-    const url = String(urlInput?.value || '').trim();
-    const apiKey = String(apiKeyInput?.value || '').trim();
-
-    if (!url) {
-      showToast('Please enter a Videy URL', 'error');
-      return;
-    }
-
-    if (!apiKey) {
-      showToast('Please enter or select a Browserless API key', 'error');
-      return;
-    }
-
-    setVideyStatus('loading', 'Automating browser...');
-    
-    try {
-      const result = await scrapeVideyDirectLink(url, apiKey);
-      if (result && result.videoUrl) {
-        displayVideyResult(result.videoUrl, url);
-        setVideyStatus('success', 'Video extracted');
-        showToast('Video source extracted successfully', 'success');
-      } else {
-        throw new Error('Could not find video source on page');
-      }
-    } catch (error) {
-      setVideyStatus('error', error instanceof Error ? error.message : 'Scraping failed');
-      showToast(error instanceof Error ? error.message : 'Failed to scrape video', 'error');
-    }
-  });
-
-  copyBtn?.addEventListener('click', () => {
-    const link = document.getElementById('videyDirectLink')?.textContent;
-    if (link && link !== '-') {
-      navigator.clipboard.writeText(link);
-      showToast('Direct link copied to clipboard', 'success');
-    }
-  });
-
-  // Initial update
-  updateKeyOptions();
-}
-
-function setVideyStatus(status, text) {
-  const card = document.getElementById('videyStatus');
-  const icon = document.getElementById('videyStatusIcon');
-  const textEl = document.getElementById('videyStatusText');
-
-  if (!card || !icon || !textEl) return;
-
-  card.style.display = 'flex';
-  textEl.textContent = text;
-  
-  icon.className = 'api-status-icon ' + status;
-  if (status === 'loading') {
-    icon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="animate-spin"><circle cx="12" cy="12" r="10" stroke-opacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10"/></svg>';
-  } else {
-    icon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>';
-  }
-}
-
-async function scrapeVideyDirectLink(videyUrl, apiKey) {
-  // Use Browserless /content endpoint to get the HTML and find the video tag
-  // Videy typically has a <video> with a direct <source> or src attribute
-  const proxyEndpoint = API_ENDPOINTS[0].replace(/\/generate\/?$/, '/test-proxy');
-  
-  const payload = {
-    url: `https://chrome.browserless.io/content?token=${apiKey}`,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: {
-      url: videyUrl,
-      waitFor: 'video'
-    },
-    timeoutMs: 30000
-  };
-
-  const response = await fetch(proxyEndpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-
-  if (!response.ok) {
-    const err = await response.json();
-    throw new Error(err.error || 'Failed to connect to Browserless');
-  }
-
-  const result = await response.json();
-  if (!result.ok || !result.data) {
-    throw new Error(result.error || 'Failed to extract content');
-  }
-
-  // Parse HTML to find the video source
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(result.data, 'text/html');
-  const video = doc.querySelector('video');
-  const source = doc.querySelector('video source');
-  
-  const videoUrl = source?.getAttribute('src') || video?.getAttribute('src');
-  
-  if (!videoUrl) {
-    throw new Error('Video source not found on page. Make sure the URL is correct.');
-  }
-
-  // Resolve relative URLs
-  try {
-    return { videoUrl: new URL(videoUrl, videyUrl).toString() };
-  } catch {
-    return { videoUrl };
-  }
-}
-
-function displayVideyResult(videoUrl, originalUrl) {
-  const container = document.getElementById('videyPlayerContainer');
-  const info = document.getElementById('videyVideoInfo');
-  const sourceUrlEl = document.getElementById('videySourceUrl');
-  const directLinkEl = document.getElementById('videyDirectLink');
-
-  if (!container || !info || !sourceUrlEl || !directLinkEl) return;
-
-  container.innerHTML = `
-    <video controls autoplay playsinline>
-      <source src="${videoUrl}" type="video/mp4">
-      Your browser does not support the video tag.
-    </video>
-  `;
-
-  info.style.display = 'flex';
-  sourceUrlEl.textContent = originalUrl;
-  directLinkEl.textContent = videoUrl;
-}
-
-// Update the initApp function or call this manually
-// (I will add it to the existing view switch logic)
+// API TESTER
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const apiTesterState = {
@@ -2677,14 +2579,6 @@ async function runSuite() {
 }
 
 function initApiTester() {
-  console.log("API Tester simplified");
-  const validateBtn = document.getElementById('validateApiKey');
-  const sendBtn = document.getElementById('sendRequest');
-  if (validateBtn) validateBtn.addEventListener('click', validateApiKey);
-  if (sendBtn) sendBtn.addEventListener('click', sendApiRequest);
-}
-
-function DEPRECATED_initApiTester() {
   if (!testerEl('view-api-tester')) {
     return;
   }
@@ -3108,126 +3002,63 @@ function updateActivityList() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// VIDEY SCRAPER LOGIC
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function initVideyScraper() {
-  const scrapeBtn = document.getElementById('scrapeVideyBtn');
-  const urlInput = document.getElementById('videyUrl');
-  const selectKey = document.getElementById('videySelectKey');
-  const copyBtn = document.getElementById('copyVideyLinkBtn');
-
-  // Update key options whenever a view changes or generation finishes
-  const updateKeys = () => {
-    if (!selectKey) return;
-    const current = selectKey.value;
-    const keys = state.results.filter(r => r.status === 'success' && r.apiKey);
-    selectKey.innerHTML = '<option value="">-- Select Key --</option>' + 
-      keys.map(r => `<option value="${r.apiKey}">${r.email.split('@')[0]} (${r.apiKey.substring(0,8)}...)</option>`).join('');
-    if (current) selectKey.value = current;
-  };
-
-  scrapeBtn?.addEventListener('click', async () => {
-    const url = urlInput?.value.trim();
-    const apiKey = selectKey?.value || getActiveApiKey();
-
-    if (!url || !url.includes('videy.co')) {
-      showToast('Please enter a valid Videy URL', 'error');
-      return;
-    }
-
-    if (!apiKey) {
-      showToast('Please select or generate an API key first', 'error');
-      return;
-    }
-
-    setVideyStatus('loading', 'Scraping video link...');
-    
-    try {
-      const videoUrl = await performVideyScrape(url, apiKey);
-      displayVideyScrapeResult(videoUrl);
-      setVideyStatus('success', 'Video extracted');
-      showToast('Video link extracted successfully', 'success');
-    } catch (error) {
-      setVideyStatus('error', error.message);
-      showToast(error.message, 'error');
-    }
-  });
-
-  copyBtn?.addEventListener('click', () => {
-    const link = document.getElementById('videyDirectLink')?.value;
-    if (link && link !== '-') {
-      navigator.clipboard.writeText(link);
-      showToast('Link copied to clipboard', 'success');
-    }
-  });
-
-  // Export to window so it can be called elsewhere if needed
-  window.updateVideyKeys = updateKeys;
-}
-
-function setVideyStatus(type, text) {
-  const card = document.getElementById('videyStatus');
-  const textEl = document.getElementById('videyStatusText');
-  if (card && textEl) {
-    card.style.display = 'flex';
-    textEl.textContent = text;
-    card.className = `api-status-card ${type}`;
-  }
-}
-
-async function performVideyScrape(targetUrl, apiKey) {
-  const proxyEndpoint = '/api/test-proxy';
-  
-  const payload = {
-    url: `https://chrome.browserless.io/scrape?token=${apiKey}`,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: {
-      url: targetUrl,
-      elements: [{ selector: 'video source', attribute: 'src' }]
-    },
-    timeoutMs: 30000
-  };
-
-  const response = await fetch(proxyEndpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-
-  const result = await response.json();
-  if (!result.ok || !result.data || !result.data.data) {
-    throw new Error(result.error || 'Failed to scrape video source');
-  }
-
-  const videoSrc = result.data.data[0]?.results[0]?.value;
-  if (!videoSrc) throw new Error('Could not find video source on the page');
-
-  return videoSrc;
-}
-
-function displayVideyScrapeResult(videoUrl) {
-  const container = document.getElementById('videyPlayerContainer');
-  const info = document.getElementById('videyVideoInfo');
-  const linkInput = document.getElementById('videyDirectLink');
-
-  if (container) {
-    container.innerHTML = `<video id="videyPlayer" controls autoplay style="width:100%; border-radius:var(--radius-lg);"><source src="${videoUrl}" type="video/mp4"></video>`;
-  }
-  if (info) info.style.display = 'block';
-  if (linkInput) linkInput.value = videoUrl;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // INITIALIZE ALL FEATURES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-document.addEventListener('DOMContentLoaded', () => {
-  initViewSwitching();
-  initMobileSidebar();
-  initApiTester();
-  initImageModal();
-  initVideyScraper(); // Added
-  updateAnalytics();
+document.addEventListener('DOMContentLoaded', async () => {
+  console.log('[DOMContentLoaded] Starting initialization...');
+
+  // Load saved results from Vercel KV first
+  try {
+    const loaded = await loadResultsFromKV();
+    if (loaded) {
+      console.log('[KV] Results loaded from KV');
+    }
+  } catch (err) {
+    console.debug('[KV] Load failed, continuing without KV data');
+  }
+
+  try {
+    initUI();
+    console.log('[DOMContentLoaded] initUI done');
+  } catch (err) {
+    console.error('[DOMContentLoaded] initUI error:', err);
+  }
+
+  try {
+    initViewSwitching();
+    console.log('[DOMContentLoaded] initViewSwitching done');
+  } catch (err) {
+    console.error('[DOMContentLoaded] initViewSwitching error:', err);
+  }
+
+  try {
+    initMobileSidebar();
+    console.log('[DOMContentLoaded] initMobileSidebar done');
+  } catch (err) {
+    console.error('[DOMContentLoaded] initMobileSidebar error:', err);
+  }
+
+  try {
+    initApiTester();
+    console.log('[DOMContentLoaded] initApiTester done');
+  } catch (err) {
+    console.error('[DOMContentLoaded] initApiTester error:', err);
+  }
+
+  try {
+    initImageModal();
+    console.log('[DOMContentLoaded] initImageModal done');
+  } catch (err) {
+    console.error('[DOMContentLoaded] initImageModal error:', err);
+  }
+
+  try {
+    updateAnalytics();
+    console.log('[DOMContentLoaded] updateAnalytics done');
+  } catch (err) {
+    console.error('[DOMContentLoaded] updateAnalytics error:', err);
+  }
+
+  console.log('[DOMContentLoaded] All initialization complete');
 });

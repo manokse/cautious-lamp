@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@vercel/kv": "^3.0.0",
     "https-proxy-agent": "^8.0.0"
   }
 }
