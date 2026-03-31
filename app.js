@@ -2174,72 +2174,38 @@ async function executeBrowserlessRequest({
     }
   }
 
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs + 2000);
 
   try {
-    const requestHeaders = new Headers();
-    Object.entries(headers || {}).forEach(([key, value]) => {
-      const normalizedKey = String(key || '').trim();
-      if (!normalizedKey) {
-        return;
-      }
-
-      requestHeaders.set(normalizedKey, String(value || ''));
-    });
-
-    const normalizedMethod = String(method || 'GET').toUpperCase();
-    const init = {
-      method: normalizedMethod,
-      headers: requestHeaders,
-      signal: controller.signal,
+    const proxyEndpoint = API_ENDPOINTS[0].replace(/\/generate\/?$/, '/test-proxy');
+    
+    const payload = {
+      url: url.toString(),
+      method: method || 'POST',
+      headers: headers || {},
+      body: body || null,
+      timeoutMs: timeoutMs || 30000,
     };
 
-    if (body !== null && normalizedMethod !== 'GET' && normalizedMethod !== 'HEAD') {
-      if (!requestHeaders.has('Content-Type')) {
-        requestHeaders.set('Content-Type', 'application/json');
-      }
+    const response = await fetch(proxyEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
 
-      init.body = typeof body === 'string' ? body : JSON.stringify(body);
-    }
-
-    const response = await fetch(url.toString(), init);
+    clearTimeout(timeoutId);
     const durationMs = Math.round(performance.now() - startedAt);
-    const responseHeaders = Object.fromEntries(response.headers.entries());
-    const contentType = String(response.headers.get('content-type') || '');
-
-    let responseType = 'text';
-    let data = null;
-    let rawText = '';
-    let sizeBytes = Number.parseInt(String(response.headers.get('content-length') || '0'), 10) || 0;
-
-    if (/^image\//i.test(contentType) || /application\/pdf/i.test(contentType)) {
-      const blob = await response.blob();
-      sizeBytes = sizeBytes || blob.size;
-      responseType = /application\/pdf/i.test(contentType) ? 'pdf' : 'image';
-      data = URL.createObjectURL(blob);
-      rawText = `${responseType.toUpperCase()} binary payload (${sizeBytes} bytes)`;
-    } else {
-      rawText = await response.text();
-      sizeBytes = sizeBytes || new TextEncoder().encode(rawText).length;
-
-      try {
-        data = rawText ? JSON.parse(rawText) : {};
-        responseType = 'json';
-      } catch {
-        data = rawText;
-        responseType = 'text';
-      }
+    
+    const responseData = await response.json();
+    if (!response.ok) {
+      throw new Error(responseData.error || `Proxy returned ${response.status}`);
     }
 
     return {
-      ok: response.ok,
-      status: response.status,
-      statusText: response.statusText,
-      headers: responseHeaders,
-      data,
-      rawText,
-      responseType,
-      sizeBytes,
+      ...responseData,
       durationMs,
       url: url.toString(),
     };

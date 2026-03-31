@@ -147,6 +147,106 @@ function healthPayload() {
 async function handleFetchRequest(request) {
   await settleProxyTransportProbe();
 
+  const urlObj = new URL(request.url);
+  const path = urlObj.pathname;
+
+  if (path === "/api/test-proxy" || path === "/api/test-proxy/") {
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: commonHeaders(),
+      });
+    }
+
+    if (request.method !== "POST") {
+      return jsonResponseFetch({ ok: false, error: "Method not allowed" }, 405);
+    }
+
+    let body = {};
+    try {
+      body = await request.json();
+    } catch {
+      return jsonResponseFetch({ ok: false, error: "Invalid JSON body" }, 400);
+    }
+
+    const { url, method, headers, body: targetBody, timeoutMs } = body;
+    if (!url) {
+      return jsonResponseFetch({ ok: false, error: "Target URL is required" }, 400);
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs || 30000);
+
+      const response = await fetch(url, {
+        method: method || "GET",
+        headers: headers || {},
+        body: targetBody ? (typeof targetBody === "string" ? targetBody : JSON.stringify(targetBody)) : undefined,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      const contentType = response.headers.get("content-type") || "";
+      const responseHeaders = Object.fromEntries(response.headers.entries());
+      let sizeBytes = Number.parseInt(response.headers.get("content-length") || "0", 10) || 0;
+
+      if (contentType.includes("application/json")) {
+        const rawText = await response.text();
+        sizeBytes = sizeBytes || Buffer.byteLength(rawText);
+        let data = {};
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          data = rawText;
+        }
+        return jsonResponseFetch({
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          headers: responseHeaders,
+          data,
+          rawText,
+          responseType: "json",
+          sizeBytes,
+        }, 200);
+      } else if (contentType.includes("image/") || contentType.includes("application/pdf")) {
+        const blob = await response.arrayBuffer();
+        sizeBytes = sizeBytes || blob.byteLength;
+        const base64 = Buffer.from(blob).toString("base64");
+        const responseType = contentType.includes("pdf") ? "pdf" : "image";
+        return jsonResponseFetch({
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          headers: responseHeaders,
+          data: `data:${contentType};base64,${base64}`,
+          rawText: `${responseType.toUpperCase()} binary payload (${sizeBytes} bytes)`,
+          responseType,
+          sizeBytes,
+        }, 200);
+      } else {
+        const rawText = await response.text();
+        sizeBytes = sizeBytes || Buffer.byteLength(rawText);
+        return jsonResponseFetch({
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          headers: responseHeaders,
+          data: rawText,
+          rawText,
+          responseType: "text",
+          sizeBytes,
+        }, 200);
+      }
+    } catch (error) {
+      return jsonResponseFetch({
+        ok: false,
+        error: error instanceof Error ? error.message : "Proxy request failed",
+      }, 500);
+    }
+  }
+
   if (request.method === "OPTIONS") {
     return new Response(null, {
       status: 204,
@@ -194,6 +294,101 @@ async function handleFetchRequest(request) {
 
 async function handleNodeRequest(req, res) {
   await settleProxyTransportProbe();
+
+  const path = req.url?.split("?")[0];
+
+  if (path === "/api/test-proxy" || path === "/api/test-proxy/") {
+    if (req.method === "OPTIONS") {
+      writeNodeOptions(res);
+      return;
+    }
+
+    if (req.method !== "POST") {
+      writeNodeJson(res, { ok: false, error: "Method not allowed" }, 405);
+      return;
+    }
+
+    const body = await readNodeRequestBody(req);
+    const { url, method, headers, body: targetBody, timeoutMs } = body;
+
+    if (!url) {
+      writeNodeJson(res, { ok: false, error: "Target URL is required" }, 400);
+      return;
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs || 30000);
+
+      const response = await fetch(url, {
+        method: method || "GET",
+        headers: headers || {},
+        body: targetBody ? (typeof targetBody === "string" ? targetBody : JSON.stringify(targetBody)) : undefined,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      const contentType = response.headers.get("content-type") || "";
+      const responseHeaders = Object.fromEntries(response.headers.entries());
+      let sizeBytes = Number.parseInt(response.headers.get("content-length") || "0", 10) || 0;
+
+      if (contentType.includes("application/json")) {
+        const rawText = await response.text();
+        sizeBytes = sizeBytes || Buffer.byteLength(rawText);
+        let data = {};
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          data = rawText;
+        }
+        writeNodeJson(res, {
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          headers: responseHeaders,
+          data,
+          rawText,
+          responseType: "json",
+          sizeBytes,
+        }, 200);
+      } else if (contentType.includes("image/") || contentType.includes("application/pdf")) {
+        const blob = await response.arrayBuffer();
+        sizeBytes = sizeBytes || blob.byteLength;
+        const base64 = Buffer.from(blob).toString("base64");
+        const responseType = contentType.includes("pdf") ? "pdf" : "image";
+        writeNodeJson(res, {
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          headers: responseHeaders,
+          data: `data:${contentType};base64,${base64}`,
+          rawText: `${responseType.toUpperCase()} binary payload (${sizeBytes} bytes)`,
+          responseType,
+          sizeBytes,
+        }, 200);
+      } else {
+        const rawText = await response.text();
+        sizeBytes = sizeBytes || Buffer.byteLength(rawText);
+        writeNodeJson(res, {
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          headers: responseHeaders,
+          data: rawText,
+          rawText,
+          responseType: "text",
+          sizeBytes,
+        }, 200);
+      }
+    } catch (error) {
+      writeNodeJson(res, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Proxy request failed",
+      }, 500);
+    }
+    return;
+  }
 
   if (req.method === "OPTIONS") {
     writeNodeOptions(res);
