@@ -1437,7 +1437,7 @@ function closeMobileSidebar() {
 // VIDEY SCRAPER
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function initVideyScraper() {
+function temp_initVideyScraper() {
   const scrapeBtn = document.getElementById('scrapeVideyBtn');
   const urlInput = document.getElementById('videyUrl');
   const apiKeyInput = document.getElementById('videyApiKey');
@@ -2677,6 +2677,14 @@ async function runSuite() {
 }
 
 function initApiTester() {
+  console.log("API Tester simplified");
+  const validateBtn = document.getElementById('validateApiKey');
+  const sendBtn = document.getElementById('sendRequest');
+  if (validateBtn) validateBtn.addEventListener('click', validateApiKey);
+  if (sendBtn) sendBtn.addEventListener('click', sendApiRequest);
+}
+
+function DEPRECATED_initApiTester() {
   if (!testerEl('view-api-tester')) {
     return;
   }

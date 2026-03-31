@@ -3,6 +3,16 @@
    Theme: Sophisticated dark interface with warm accents
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/* Global Overlay Reset to ensure clickability */
+.sidebar-overlay, .modal, .image-modal { 
+  display: none !important; 
+  pointer-events: none !important; 
+}
+.sidebar-overlay.active, .modal.active, .image-modal.active { 
+  display: flex !important; 
+  pointer-events: auto !important; 
+}
+
 /* ─── Design Tokens ─────────────────────────────────────────────────────────── */
 :root {
   /* Color System - Using OKLCH for perceptual uniformity */
@@ -2292,31 +2302,28 @@ output {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   MOBILE SIDEBAR & OVERLAY FIXES
+   OVERLAY & MODAL FIXES
    ═══════════════════════════════════════════════════════════════════════════ */
 
-.sidebar-overlay {
+.sidebar-overlay, .modal, .image-modal {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
+  inset: 0;
   z-index: 1000;
-  display: none; /* Hidden by default */
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+  display: none;
   opacity: 0;
-  pointer-events: none; /* Allow clicks to pass through when hidden */
+  pointer-events: none; /* Crucial: let clicks pass through */
   transition: opacity var(--duration-normal) var(--ease-out);
 }
 
-.sidebar-overlay.active {
-  display: block;
+.sidebar-overlay.active, .modal.active, .image-modal.active {
+  display: flex;
   opacity: 1;
-  pointer-events: auto; /* Block clicks when active */
+  pointer-events: auto; /* Capture clicks when active */
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1024px) {
   .dashboard {
     flex-direction: column;
   }
@@ -2324,27 +2331,59 @@ output {
   .sidebar {
     position: fixed;
     top: 0;
-    left: -100%; /* Hidden off-screen */
+    left: -100%;
     width: 85%;
     max-width: 320px;
     height: 100vh;
-    z-index: 1001;
+    z-index: 1100;
     transition: left var(--duration-normal) var(--ease-out);
-    visibility: hidden; /* Hide from screen readers when closed */
+    box-shadow: var(--shadow-xl);
+    pointer-events: none;
   }
 
   .sidebar.open {
     left: 0;
-    visibility: visible;
+    pointer-events: auto;
   }
-  
+
   .main-content {
     padding: var(--space-4);
     width: 100%;
+    min-width: 0;
   }
 
   .api-tester-grid, .videy-scraper-grid {
     grid-template-columns: 1fr !important;
+    gap: var(--space-4);
+  }
+  
+  .header-content {
+    padding: 0 var(--space-4);
+  }
+  
+  .header-stats {
+    display: none;
+  }
+
+  .mobile-menu-toggle {
+    display: flex;
+  }
+}
+
+@media (max-width: 640px) {
+  .nav-tabs {
+    overflow-x: auto;
+    width: 100%;
+    justify-content: flex-start;
+    padding: var(--space-1);
+  }
+  
+  .nav-tab span {
+    display: none; /* Show only icons on very small screens */
+  }
+  
+  .nav-tab {
+    padding: var(--space-2) var(--space-3);
   }
 }
 
