@@ -54,6 +54,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
             <span>API Tester</span>
           </button>
+          <button class="nav-tab" data-view="videy-scraper">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+            <span>Videy Scraper</span>
+          </button>
           <button class="nav-tab" data-view="analytics">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
             <span>Analytics</span>
@@ -331,23 +335,15 @@
           </div>
         </section>
 
-        <!-- Hidden select for compatibility -->
-        <select id="executionMode" hidden>
-          <option value="sequential">sequential</option>
-          <option value="async_pool" selected>async_pool</option>
-        </select>
-        <select id="keyExportFormat" hidden>
-          <option value="txt" selected>txt</option>
-          <option value="csv">csv</option>
-          <option value="json">json</option>
-        </select>
+        <!-- Hidden inputs for compatibility -->
+        <select id="executionMode" hidden><option value="async_pool" selected></option></select>
+        <select id="keyExportFormat" hidden><option value="txt" selected></option></select>
       </aside>
 
       <!-- Main Content Area -->
       <div class="main-content">
         <!-- ===================== GENERATOR VIEW ===================== -->
         <div class="view active" id="view-generator">
-          <!-- Action Bar -->
           <div class="action-bar">
             <div class="action-buttons">
               <button id="startBtn" class="btn btn-primary btn-lg">
@@ -375,44 +371,29 @@
             </div>
           </div>
 
-          <!-- Status Display -->
           <div class="status-bar" id="statusBar">
             <div class="status-indicator idle" id="statusIndicator">
               <span class="status-dot"></span>
               <span id="statusText">Ready to start</span>
             </div>
             <div class="progress-container" id="progressContainer" style="display: none;">
-              <div class="progress-bar">
-                <div class="progress-fill" id="progressFill" style="width: 0%"></div>
-              </div>
+              <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width: 0%"></div></div>
               <span class="progress-text" id="progressText">0 / 0</span>
             </div>
           </div>
 
-          <!-- Results Table -->
           <section class="results-section">
             <div class="results-header">
               <h2>Generation Results</h2>
               <div class="results-controls">
-                <!-- Search -->
                 <div class="search-box">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
                   <input type="text" id="searchInput" placeholder="Search email, key..." />
                 </div>
-                <!-- Filters -->
                 <div class="filter-group">
-                  <button class="filter-btn active" data-filter="all">
-                    All <span class="filter-count" id="countAll">0</span>
-                  </button>
-                  <button class="filter-btn" data-filter="success">
-                    <span class="dot success"></span> <span class="filter-text">Success</span> <span class="filter-count" id="countSuccess">0</span>
-                  </button>
-                  <button class="filter-btn" data-filter="error">
-                    <span class="dot error"></span> <span class="filter-text">Failed</span> <span class="filter-count" id="countFailed">0</span>
-                  </button>
-                  <button class="filter-btn" data-filter="running">
-                    <span class="dot running"></span> <span class="filter-text">Running</span> <span class="filter-count" id="countRunning">0</span>
-                  </button>
+                  <button class="filter-btn active" data-filter="all">All <span class="filter-count" id="countAll">0</span></button>
+                  <button class="filter-btn" data-filter="success"><span class="dot success"></span> <span class="filter-text">Success</span> <span class="filter-count" id="countSuccess">0</span></button>
+                  <button class="filter-btn" data-filter="error"><span class="dot error"></span> <span class="filter-text">Failed</span> <span class="filter-count" id="countFailed">0</span></button>
                 </div>
               </div>
             </div>
@@ -422,72 +403,20 @@
                 <thead>
                   <tr>
                     <th class="col-num">#</th>
-                    <th class="col-email sortable" data-sort="email">
-                      Email
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 15l5 5 5-5M7 9l5-5 5 5"/></svg>
-                    </th>
+                    <th class="col-email sortable" data-sort="email">Email</th>
                     <th class="col-otp">OTP</th>
                     <th class="col-key">API Key</th>
-                    <th class="col-proxy hide-mobile">Proxy</th>
-                    <th class="col-status sortable" data-sort="status">
-                      Status
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 15l5 5 5-5M7 9l5-5 5 5"/></svg>
-                    </th>
-                    <th class="col-note hide-tablet">Notes</th>
+                    <th class="col-status sortable" data-sort="status">Status</th>
                     <th class="col-actions">Actions</th>
                   </tr>
                 </thead>
-                <tbody id="resultsBody">
-                  <tr class="empty-state">
-                    <td colspan="8">
-                      <div class="empty-content">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                          <path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                          <path d="M9 10h.01M15 10h.01M9.5 15.5a3.5 3.5 0 017 0"/>
-                        </svg>
-                        <p>No results yet</p>
-                        <span>Configure settings and click "Start Generation"</span>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
+                <tbody id="resultsBody"><tr class="empty-state"><td colspan="6">No results yet</td></tr></tbody>
               </table>
-            </div>
-
-            <!-- Pagination -->
-            <div class="pagination" id="pagination" style="display: none;">
-              <button class="page-btn" id="prevPage" disabled>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-              </button>
-              <span class="page-info">Page <span id="currentPage">1</span> of <span id="totalPages">1</span></span>
-              <button class="page-btn" id="nextPage" disabled>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-              </button>
-              <select id="pageSize" class="select-styled select-sm">
-                <option value="10">10 / page</option>
-                <option value="25" selected>25 / page</option>
-                <option value="50">50 / page</option>
-                <option value="100">100 / page</option>
-              </select>
             </div>
           </section>
 
-          <!-- Logs Section -->
           <section class="logs-section">
-            <div class="logs-header">
-              <h3>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                Live Log
-              </h3>
-              <div class="logs-controls">
-                <label class="toggle-switch small">
-                  <input id="autoScroll" type="checkbox" checked />
-                  <span class="toggle-track"></span>
-                  <span class="toggle-label">Auto-scroll</span>
-                </label>
-                <button id="clearLogs" class="btn btn-ghost btn-sm">Clear</button>
-              </div>
-            </div>
+            <div class="logs-header"><h3>Live Log</h3><button id="clearLogs" class="btn btn-ghost btn-sm">Clear</button></div>
             <pre id="lastLog" class="log-output">Waiting for activity...</pre>
           </section>
         </div>
@@ -496,330 +425,103 @@
         <div class="view" id="view-api-tester">
           <div class="api-tester">
             <div class="api-tester-header">
-              <h2>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-                Browserless API Test Lab
-              </h2>
-              <p class="api-tester-desc">Test key validity, run multi-endpoint suites, and inspect raw API behavior from one responsive console.</p>
+              <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg> Browserless API Test Lab</h2>
+              <p class="api-tester-desc">Test key validity and inspect raw API behavior.</p>
             </div>
 
             <div class="api-tester-grid">
               <div class="api-config-panel">
-                <h3>Configuration</h3>
-
                 <div class="form-row">
-                  <label class="form-label" for="testApiKey">API Key</label>
+                  <label class="form-label">API Key</label>
                   <div class="input-with-action">
-                    <input type="text" id="testApiKey" placeholder="Enter your Browserless API key" autocomplete="off" />
-                    <button class="btn btn-secondary btn-sm" id="pasteApiKey" title="Paste from clipboard">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
-                    </button>
+                    <input type="text" id="testApiKey" placeholder="Enter API key" />
                   </div>
                   <div class="api-key-source">
-                    <span>Use generated key:</span>
-                    <select id="selectGeneratedKey" class="select-styled select-sm">
-                      <option value="">-- Select from successful results --</option>
-                    </select>
+                    <span>Quick Select:</span>
+                    <select id="selectGeneratedKey" class="select-styled select-sm"><option value="">-- Select --</option></select>
                   </div>
                 </div>
-
                 <div class="form-row">
-                  <label class="form-label" for="testBaseUrl">Base URL</label>
+                  <label class="form-label">Base URL</label>
                   <select id="testBaseUrl" class="select-styled">
-                    <option value="https://chrome.browserless.io">chrome.browserless.io (Chrome)</option>
-                    <option value="https://production-sfo.browserless.io">production-sfo.browserless.io (SFO)</option>
-                    <option value="https://production-lon.browserless.io">production-lon.browserless.io (LON)</option>
-                    <option value="https://firefox.browserless.io">firefox.browserless.io (Firefox)</option>
-                    <option value="https://webkit.browserless.io">webkit.browserless.io (WebKit)</option>
+                    <option value="https://chrome.browserless.io">chrome.browserless.io</option>
                     <option value="custom">Custom URL</option>
                   </select>
                 </div>
-
                 <div class="form-row" id="customBaseUrlRow" style="display: none;">
-                  <label class="form-label" for="customBaseUrl">Custom Base URL</label>
-                  <input type="text" id="customBaseUrl" placeholder="https://your-custom-browserless-host" />
+                  <input type="text" id="customBaseUrl" placeholder="https://..." />
                 </div>
+                <button class="btn btn-secondary btn-sm btn-full" id="validateApiKey">Validate Key</button>
+              </div>
 
+              <div class="api-response-panel">
+                <div class="request-builder-header">
+                  <div class="request-method-url">
+                    <select id="requestMethod" class="select-styled" style="width: 100px;"><option value="POST">POST</option><option value="GET">GET</option></select>
+                    <input type="text" id="requestEndpoint" value="/screenshot" placeholder="/endpoint" />
+                    <button class="btn btn-primary" id="sendRequest">Send</button>
+                  </div>
+                </div>
+                <textarea id="requestBody" class="code-editor" style="height: 120px;">{ "url": "https://example.com" }</textarea>
+                
+                <div class="response-viewer" style="margin-top: var(--space-4);">
+                  <div class="response-header">
+                    <h3>Response</h3>
+                    <div class="response-meta"><span id="responseStatus">--</span> <span id="responseTime">-- ms</span></div>
+                  </div>
+                  <div class="response-content" style="min-height: 200px; background: var(--bg-input); border-radius: var(--radius-lg); padding: var(--space-4);">
+                    <div id="responsePlaceholder" class="response-placeholder">No response yet</div>
+                    <div id="responseImage" style="display: none;"><img id="responseImageEl" style="width: 100%;" /></div>
+                    <pre id="responseJson" style="display: none; font-size: var(--text-xs);"></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===================== VIDEY SCRAPER VIEW ===================== -->
+        <div class="view" id="view-videy-scraper">
+          <div class="videy-scraper">
+            <div class="api-tester-header">
+              <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg> Videy Video Scraper</h2>
+              <p class="api-tester-desc">Extract direct video links from Videy.co and play them instantly.</p>
+            </div>
+
+            <div class="api-tester-grid">
+              <div class="api-config-panel">
+                <h3>Scraper Config</h3>
                 <div class="form-row">
-                  <label class="form-label" for="testTargetUrl">Default Target URL</label>
-                  <input type="text" id="testTargetUrl" value="https://example.com" placeholder="https://target-site.com" />
+                  <label class="form-label">Videy URL</label>
+                  <input type="text" id="videyUrl" placeholder="https://videy.co/v?id=XXXXXX" />
                 </div>
-
-                <div class="form-grid-2">
-                  <div class="form-row">
-                    <label class="form-label" for="apiRequestTimeout">Request Timeout</label>
-                    <div class="input-unit">
-                      <input type="number" id="apiRequestTimeout" min="5000" max="120000" step="1000" value="30000" />
-                      <span>ms</span>
-                    </div>
-                  </div>
-                  <div class="form-row">
-                    <label class="form-label" for="suiteConcurrency">Suite Concurrency</label>
-                    <div class="range-with-value">
-                      <input id="suiteConcurrency" type="range" min="1" max="4" value="2" />
-                      <output id="suiteConcurrencyOutput">2</output>
-                    </div>
-                  </div>
+                <div class="form-row">
+                  <label class="form-label">Select API Key</label>
+                  <select id="videySelectKey" class="select-styled"><option value="">-- Select Key --</option></select>
                 </div>
-
-                <div class="api-config-actions">
-                  <button class="btn btn-secondary btn-sm" id="validateApiKey">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
-                    Validate Key
-                  </button>
-                  <button class="btn btn-ghost btn-sm" id="syncTargetFromBody">
-                    Sync URL From Body
-                  </button>
-                </div>
-
-                <div class="api-status-card" id="apiStatusCard">
-                  <div class="api-status-icon idle" id="apiStatusIcon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-                  </div>
+                <button class="btn btn-primary btn-full" id="scrapeVideyBtn">Scrape Video</button>
+                
+                <div id="videyStatus" class="api-status-card" style="display: none; margin-top: var(--space-4);">
                   <div class="api-status-info">
-                    <span class="api-status-label">API Status</span>
-                    <span class="api-status-value" id="apiStatusValue">Not tested</span>
+                    <span class="api-status-label">Status</span>
+                    <span class="api-status-value" id="videyStatusText">Idle</span>
                   </div>
                 </div>
               </div>
 
-              <div class="quick-tests-panel">
-                <div class="quick-tests-head">
-                  <h3>Endpoint Presets</h3>
-                  <button class="btn btn-ghost btn-sm" id="resetPresetSelection">Reset</button>
+              <div class="video-preview-panel">
+                <div class="panel-header"><h2>Video Player</h2></div>
+                <div class="video-container" id="videyPlayerContainer" style="background:#000; min-height: 300px; display: flex; align-items: center; justify-content: center;">
+                  <div id="videyPlaceholder" style="color: var(--text-tertiary);">Enter URL and click Scrape</div>
                 </div>
-
-                <div class="quick-test-grid">
-                  <button class="quick-test-btn" data-test="screenshot">
-                    <div class="quick-test-icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                    </div>
-                    <span>Screenshot</span>
-                    <small>Binary image response</small>
-                  </button>
-                  <button class="quick-test-btn" data-test="pdf">
-                    <div class="quick-test-icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                    </div>
-                    <span>PDF</span>
-                    <small>Document rendering</small>
-                  </button>
-                  <button class="quick-test-btn" data-test="content">
-                    <div class="quick-test-icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
-                    </div>
-                    <span>Content</span>
-                    <small>HTML/text extraction</small>
-                  </button>
-                  <button class="quick-test-btn" data-test="scrape">
-                    <div class="quick-test-icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                    </div>
-                    <span>Scrape</span>
-                    <small>Structured selectors</small>
-                  </button>
-                  <button class="quick-test-btn" data-test="function">
-                    <div class="quick-test-icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-                    </div>
-                    <span>Function</span>
-                    <small>Run custom code</small>
-                  </button>
-                  <button class="quick-test-btn" data-test="performance">
-                    <div class="quick-test-icon">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
-                    </div>
-                    <span>Performance</span>
-                    <small>Lighthouse metrics</small>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div class="request-builder">
-              <div class="request-builder-header">
-                <h3>Request Builder</h3>
-                <div class="request-method-url">
-                  <select id="requestMethod" class="select-styled">
-                    <option value="GET">GET</option>
-                    <option value="POST" selected>POST</option>
-                    <option value="DELETE">DELETE</option>
-                  </select>
-                  <input type="text" id="requestEndpoint" placeholder="/screenshot" value="/screenshot" />
-                  <button class="btn btn-primary" id="sendRequest">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                    Send
-                  </button>
-                </div>
-              </div>
-
-              <div class="request-builder-body">
-                <div class="request-tabs">
-                  <button class="request-tab active" data-request-tab="body">Body</button>
-                  <button class="request-tab" data-request-tab="headers">Headers</button>
-                  <button class="request-tab" data-request-tab="params">Query Params</button>
-                  <button class="request-tab" data-request-tab="curl">cURL</button>
-                </div>
-
-                <div class="request-tab-content active" id="request-tab-body">
-                  <div class="code-editor-wrapper">
-                    <div class="code-editor-header">
-                      <span>JSON Body</span>
-                      <div class="code-editor-actions">
-                        <button class="btn btn-ghost btn-xs" id="formatJson">Format</button>
-                        <button class="btn btn-ghost btn-xs" id="clearJson">Clear</button>
-                      </div>
-                    </div>
-                    <textarea id="requestBody" class="code-editor" spellcheck="false">{
-  "url": "https://example.com",
-  "options": {
-    "fullPage": true,
-    "type": "png"
-  }
-}</textarea>
-                  </div>
-                </div>
-
-                <div class="request-tab-content" id="request-tab-headers">
-                  <div class="key-value-editor" id="headersEditor">
-                    <div class="key-value-row">
-                      <input type="text" placeholder="Header name" value="Content-Type" />
-                      <input type="text" placeholder="Value" value="application/json" />
-                      <button class="btn btn-ghost btn-xs remove-row" type="button">×</button>
+                <div class="video-info" id="videyVideoInfo" style="display: none; padding: var(--space-4); background: var(--bg-elevated);">
+                  <div class="info-row">
+                    <span class="label" style="font-size: var(--text-xs); color: var(--text-tertiary);">DIRECT LINK:</span>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                      <input type="text" id="videyDirectLink" readonly style="flex: 1; background: transparent; border: none; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--accent);" />
+                      <button class="btn btn-ghost btn-xs" id="copyVideyLinkBtn">Copy</button>
                     </div>
                   </div>
-                  <button class="btn btn-ghost btn-sm add-row" data-target="headersEditor" type="button">+ Add Header</button>
-                </div>
-
-                <div class="request-tab-content" id="request-tab-params">
-                  <div class="key-value-editor" id="paramsEditor">
-                    <div class="key-value-row">
-                      <input type="text" placeholder="Parameter name" />
-                      <input type="text" placeholder="Value" />
-                      <button class="btn btn-ghost btn-xs remove-row" type="button">×</button>
-                    </div>
-                  </div>
-                  <button class="btn btn-ghost btn-sm add-row" data-target="paramsEditor" type="button">+ Add Parameter</button>
-                </div>
-
-                <div class="request-tab-content" id="request-tab-curl">
-                  <div class="code-editor-wrapper">
-                    <div class="code-editor-header">
-                      <span>cURL Preview</span>
-                      <div class="code-editor-actions">
-                        <button class="btn btn-ghost btn-xs" id="copyCurl" type="button">Copy</button>
-                      </div>
-                    </div>
-                    <pre id="curlPreview" class="response-raw-content">curl --request POST "https://chrome.browserless.io/screenshot?token=YOUR_API_KEY"</pre>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="suite-runner">
-              <div class="suite-runner-header">
-                <h3>Suite Runner</h3>
-                <div class="suite-runner-actions">
-                  <button id="runSuiteBtn" class="btn btn-primary btn-sm">
-                    <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                    Run Suite
-                  </button>
-                  <button id="stopSuiteBtn" class="btn btn-danger btn-sm" disabled>
-                    <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
-                    Stop
-                  </button>
-                </div>
-              </div>
-
-              <div class="suite-options">
-                <label class="suite-check">
-                  <input type="checkbox" class="suite-case" data-test="screenshot" checked />
-                  <span>Screenshot</span>
-                </label>
-                <label class="suite-check">
-                  <input type="checkbox" class="suite-case" data-test="pdf" checked />
-                  <span>PDF</span>
-                </label>
-                <label class="suite-check">
-                  <input type="checkbox" class="suite-case" data-test="content" checked />
-                  <span>Content</span>
-                </label>
-                <label class="suite-check">
-                  <input type="checkbox" class="suite-case" data-test="scrape" checked />
-                  <span>Scrape</span>
-                </label>
-                <label class="suite-check">
-                  <input type="checkbox" class="suite-case" data-test="function" />
-                  <span>Function</span>
-                </label>
-                <label class="suite-check">
-                  <input type="checkbox" class="suite-case" data-test="performance" />
-                  <span>Performance</span>
-                </label>
-              </div>
-
-              <div class="suite-progress">
-                <div class="progress-bar">
-                  <div class="progress-fill" id="suiteProgressFill" style="width: 0%"></div>
-                </div>
-                <span class="progress-text" id="suiteProgressText">0 / 0</span>
-              </div>
-
-              <p id="suiteSummary" class="suite-summary">Select one or more cases, then run suite.</p>
-
-              <div class="suite-results-wrap">
-                <table class="suite-results-table">
-                  <thead>
-                    <tr>
-                      <th>Case</th>
-                      <th>Status</th>
-                      <th>HTTP</th>
-                      <th>Time</th>
-                      <th>Size</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody id="suiteResultsBody">
-                    <tr>
-                      <td colspan="6" class="suite-empty">No suite run yet.</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div class="response-viewer">
-              <div class="response-header">
-                <h3>Response</h3>
-                <div class="response-meta" id="responseMeta">
-                  <span class="response-status" id="responseStatus">--</span>
-                  <span class="response-time" id="responseTime">-- ms</span>
-                  <span class="response-size" id="responseSize">-- bytes</span>
-                </div>
-              </div>
-              <div class="response-tabs">
-                <button class="response-tab active" data-response-tab="preview">Preview</button>
-                <button class="response-tab" data-response-tab="raw">Raw</button>
-                <button class="response-tab" data-response-tab="headers">Headers</button>
-              </div>
-              <div class="response-content">
-                <div class="response-tab-content active" id="response-preview">
-                  <div class="response-placeholder" id="responsePlaceholder">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                      <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
-                    </svg>
-                    <p>Send a request to see the response</p>
-                  </div>
-                  <div class="response-image" id="responseImage" style="display: none;">
-                    <img id="responseImageEl" alt="Response preview" />
-                  </div>
-                  <pre class="response-json" id="responseJson" style="display: none;"></pre>
-                </div>
-                <div class="response-tab-content" id="response-raw">
-                  <pre class="response-raw-content" id="responseRaw">No response yet</pre>
-                </div>
-                <div class="response-tab-content" id="response-headers">
-                  <div class="response-headers-list" id="responseHeaders">No headers yet</div>
                 </div>
               </div>
             </div>
@@ -830,136 +532,19 @@
         <div class="view" id="view-analytics">
           <div class="analytics-dashboard">
             <div class="analytics-header">
-              <h2>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
-                Session Analytics
-              </h2>
-              <p class="analytics-desc">Real-time statistics for your current session</p>
+              <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg> Session Analytics</h2>
             </div>
-
-            <!-- Stats Cards -->
             <div class="stats-grid">
-              <div class="stat-card">
-                <div class="stat-card-icon success">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                </div>
-                <div class="stat-card-content">
-                  <span class="stat-card-value" id="analyticsSuccess">0</span>
-                  <span class="stat-card-label">Successful</span>
-                </div>
-                <div class="stat-card-trend up" id="successTrend">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>
-                  <span>--</span>
-                </div>
-              </div>
-
-              <div class="stat-card">
-                <div class="stat-card-icon error">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-                </div>
-                <div class="stat-card-content">
-                  <span class="stat-card-value" id="analyticsFailed">0</span>
-                  <span class="stat-card-label">Failed</span>
-                </div>
-                <div class="stat-card-trend down" id="failedTrend">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/></svg>
-                  <span>--</span>
-                </div>
-              </div>
-
-              <div class="stat-card">
-                <div class="stat-card-icon info">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                </div>
-                <div class="stat-card-content">
-                  <span class="stat-card-value" id="analyticsAvgTime">--</span>
-                  <span class="stat-card-label">Avg Time</span>
-                </div>
-              </div>
-
-              <div class="stat-card">
-                <div class="stat-card-icon warning">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                </div>
-                <div class="stat-card-content">
-                  <span class="stat-card-value" id="analyticsProxyUsage">0%</span>
-                  <span class="stat-card-label">Proxy Usage</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Charts Grid -->
-            <div class="charts-grid">
-              <div class="chart-card">
-                <h3>Success Rate</h3>
-                <div class="donut-chart" id="successRateChart">
-                  <svg viewBox="0 0 100 100">
-                    <circle cx="50" cy="50" r="40" fill="none" stroke="var(--border-subtle)" stroke-width="8"/>
-                    <circle id="successArc" cx="50" cy="50" r="40" fill="none" stroke="var(--success)" stroke-width="8" 
-                            stroke-dasharray="0 251.2" stroke-linecap="round" transform="rotate(-90 50 50)"/>
-                  </svg>
-                  <div class="donut-center">
-                    <span class="donut-value" id="successRateValue">0%</span>
-                    <span class="donut-label">Success</span>
-                  </div>
-                </div>
-              </div>
-
-              <div class="chart-card">
-                <h3>Generation Timeline</h3>
-                <div class="timeline-chart" id="timelineChart">
-                  <div class="timeline-empty">
-                    <p>Start generating to see timeline</p>
-                  </div>
-                </div>
-              </div>
-
-              <div class="chart-card wide">
-                <h3>Error Distribution</h3>
-                <div class="error-distribution" id="errorDistribution">
-                  <div class="distribution-empty">
-                    <p>No errors recorded yet</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Recent Activity -->
-            <div class="recent-activity">
-              <h3>Recent Activity</h3>
-              <div class="activity-list" id="activityList">
-                <div class="activity-empty">
-                  <p>No recent activity</p>
-                </div>
-              </div>
+              <div class="stat-card"><span class="stat-card-label">Successful</span><span class="stat-card-value" id="analyticsSuccess">0</span></div>
+              <div class="stat-card"><span class="stat-card-label">Failed</span><span class="stat-card-value" id="analyticsFailed">0</span></div>
             </div>
           </div>
         </div>
       </div>
     </main>
 
-    <!-- Hidden Summary for compatibility -->
-    <p id="summaryText" hidden>Success: 0 | Failed: 0 | Stopped: 0 | Total: 0</p>
-
     <!-- Toast Container -->
     <div id="toastContainer" class="toast-container"></div>
-
-    <!-- Modal for API Response Image -->
-    <div class="modal" id="imageModal">
-      <div class="modal-backdrop"></div>
-      <div class="modal-content">
-        <button class="modal-close" id="modalClose">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-        <img id="modalImage" alt="Full size preview" />
-        <div class="modal-actions">
-          <button class="btn btn-primary" id="downloadImage">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Download
-          </button>
-        </div>
-      </div>
-    </div>
 
     <script type="module" src="./app.js"></script>
   </body>

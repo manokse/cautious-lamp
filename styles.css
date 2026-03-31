@@ -3937,3 +3937,48 @@ output {
     grid-template-columns: 88px 1fr 28px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   VIDEY SCRAPER STYLES
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.videy-scraper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.videy-scraper-grid {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: var(--space-6);
+}
+
+.video-preview-panel {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+}
+
+#videyPlayer {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  display: block;
+}
+
+.video-meta {
+  padding: var(--space-4);
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--border-subtle);
+}
+
+@media (max-width: 1024px) {
+  .videy-scraper-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
