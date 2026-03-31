@@ -2292,8 +2292,61 @@ output {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   MOBILE SIDEBAR OVERLAY
+   MOBILE SIDEBAR & OVERLAY FIXES
    ═══════════════════════════════════════════════════════════════════════════ */
+
+.sidebar-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: none; /* Hidden by default */
+  opacity: 0;
+  pointer-events: none; /* Allow clicks to pass through when hidden */
+  transition: opacity var(--duration-normal) var(--ease-out);
+}
+
+.sidebar-overlay.active {
+  display: block;
+  opacity: 1;
+  pointer-events: auto; /* Block clicks when active */
+}
+
+@media (max-width: 768px) {
+  .dashboard {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: -100%; /* Hidden off-screen */
+    width: 85%;
+    max-width: 320px;
+    height: 100vh;
+    z-index: 1001;
+    transition: left var(--duration-normal) var(--ease-out);
+    visibility: hidden; /* Hide from screen readers when closed */
+  }
+
+  .sidebar.open {
+    left: 0;
+    visibility: visible;
+  }
+  
+  .main-content {
+    padding: var(--space-4);
+    width: 100%;
+  }
+
+  .api-tester-grid, .videy-scraper-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
 
 .sidebar-overlay {
   position: fixed;
